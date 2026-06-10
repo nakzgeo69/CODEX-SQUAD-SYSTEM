@@ -1,78 +1,72 @@
 const axios = require('axios');
 const { sendMessage } = require('../handles/sendMessage');
 
-function makeBold(text) {
-  return text.replace(/\*\*(.+?)\*\*/g, (match, word) => {
-    let boldText = '';
-    for (let i = 0; i < word.length; i++) {
-      const char = word[i];
-      if (char >= 'a' && char <= 'z') {
-        boldText += String.fromCharCode(char.charCodeAt(0) + 0x1D41A - 97);
-      } else if (char >= 'A' && char <= 'Z') {
-        boldText += String.fromCharCode(char.charCodeAt(0) + 0x1D400 - 65);
-      } else if (char >= '0' && char <= '9') {
-        boldText += String.fromCharCode(char.charCodeAt(0) + 0x1D7CE - 48);
-      } else {
-        boldText += char;
-      }
-    }
-    return boldText;
-  });
-}
-
-function splitMessage(text) {
-  const maxLength = 1900;
-  const chunks = [];
-
-  for (let i = 0; i < text.length; i += maxLength) {
-    chunks.push(text.slice(i, i + maxLength));
-  }
-
-  return chunks;
-}
-
 module.exports = {
   name: 'ai',
-  description: 'Chat with Grok AI',
-  usage: 'grok [message]',
+  description: 'Chat with AI',
+  usage: 'ai [message]',
   author: 'coffee',
 
   async execute(senderId, args, token) {
-    const message = args.join(' ') || 'Hello';
-    const header = '💬 | 𝙶𝚛𝚘𝚔 𝙰𝚒\n・────────────・\n';
-    const footer = '\n・──── >ᴗ< ─────・';
+    const prompt = args.join(' ').trim() || 'Hello';
 
     try {
-      const response = await axios.get('https://rapido.zetsu.xyz/api/grok', {
-        params: { query: message }
+      const { data } = await axios.get(API_URL, {
+        params: { prompt, model: 'openai', user: senderId },
+        timeout: 15000
       });
 
-      if (!response.data || !response.data.status) {
-        throw new Error('API error');
+      if (!data?.status || typeof data.data !== 'string') {
+        throw new Error('Invalid API response');
       }
 
-      let aiResponse = response.data.response;
-
-      aiResponse = aiResponse.trim();
-      aiResponse = makeBold(aiResponse);
-
-      const chunks = splitMessage(aiResponse);
-
-      for (let i = 0; i < chunks.length; i++) {
-        const isFirst = i === 0;
-        const isLast = i === chunks.length - 1;
-
-        let fullMessage = chunks[i];
-        if (isFirst) fullMessage = header + fullMessage;
-        if (isLast) fullMessage = fullMessage + footer;
-
-        await sendMessage(senderId, { text: fullMessage }, token);
-      }
+      const aiResponse = makeBold(data.data.trim());
+      await sendChunks(senderId, aiResponse, token);
 
     } catch (error) {
+      const reason = error.response
+        ? `API error ${error.response.status}`
+        : error.message ?? 'Unknown error';
+
+      console.error(`[ai] Failed for sender ${senderId}: ${reason}`);
       await sendMessage(senderId, {
-        text: header + '❌ Something went wrong. Please try again.' + footer
+        text: HEADER + '❌ Something went wrong. Please try again.' + FOOTER
       }, token);
     }
   }
 };
+
+const API_URL = 'https://api-library-kohi-production.up.railway.app/api/pollination-ai';
+const MAX_CHUNK = 1900;
+
+const HEADER = '💬 | 𝙶𝚛𝚘𝚔 𝙰𝚒\n・────────────・\n';
+const FOOTER = '\n・──── >ᴗ< ─────・';
+
+function makeBold(text) {
+  return text.replace(/\*\*(.+?)\*\*/g, (_, word) =>
+    [...word].map(char => {
+      if (char >= 'a' && char <= 'z') return String.fromCharCode(char.charCodeAt(0) + 0x1D41A - 97);
+      if (char >= 'A' && char <= 'Z') return String.fromCharCode(char.charCodeAt(0) + 0x1D400 - 65);
+      if (char >= '0' && char <= '9') return String.fromCharCode(char.charCodeAt(0) + 0x1D7CE - 48);
+      return char;
+    }).join('')
+  );
+}
+
+function splitMessage(text) {
+  const chunks = [];
+  for (let i = 0; i < text.length; i += MAX_CHUNK) {
+    chunks.push(text.slice(i, i + MAX_CHUNK));
+  }
+  return chunks;
+}
+
+async function sendChunks(senderId, text, token) {
+  const chunks = splitMessage(text);
+  for (let i = 0; i < chunks.length; i++) {
+    let msg = chunks[i];
+    if (i === 0) msg = HEADER + msg;
+    if (i === chunks.length - 1) msg += FOOTER;
+    await sendMessage(senderId, { text: msg }, token);
+  }
+}
