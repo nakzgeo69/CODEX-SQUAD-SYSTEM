@@ -11,76 +11,48 @@ module.exports = {
     const prompt = args.join(' ').trim() || 'Hello';
 
     try {
-      // Log the request URL for debugging
-      const requestUrl = `${API_URL}?prompt=${encodeURIComponent(prompt)}&model=openai-large&user=${senderId}`;
-      console.log('Fetching:', requestUrl);
-
+      // Using the copilot endpoint with gpt-5 model
       const { data } = await axios.get(API_URL, {
         params: { 
           prompt: prompt,
-          model: 'openai-large',
+          model: 'gpt-5',  // Specify the model as required
           user: senderId 
         },
         timeout: 15000
       });
 
-      // Log the full response for debugging
-      console.log('API Response:', JSON.stringify(data, null, 2));
-
-      // Check different possible response structures
-      let aiResponse = null;
-      
-      if (data?.data) {
-        aiResponse = data.data;
-      } else if (data?.response) {
-        aiResponse = data.response;
-      } else if (data?.result) {
-        aiResponse = data.result;
-      } else if (typeof data === 'string') {
-        aiResponse = data;
-      } else if (data?.message) {
-        aiResponse = data.message;
+      // Check for a successful response and extract text from data.text
+      if (!data?.status || !data?.data?.text) {
+        console.error('Unexpected API response:', data);
+        throw new Error('Invalid response structure from API');
       }
 
-      if (!aiResponse) {
-        console.error('Unexpected response structure:', data);
-        throw new Error('Could not extract AI response');
-      }
-
-      const formattedResponse = makeBold(aiResponse.trim());
-      await sendChunks(senderId, formattedResponse, token);
+      const aiResponse = makeBold(data.data.text.trim());
+      await sendChunks(senderId, aiResponse, token);
 
     } catch (error) {
-      let errorMessage = '❌ Something went wrong. Please try again.';
+      console.error(`[ai] Error for sender ${senderId}:`, error.message);
       
+      let userMessage = '❌ Something went wrong. Please try again.';
       if (error.response) {
-        // The request was made and the server responded with a status code
-        console.error('API Error Response:', {
-          status: error.response.status,
-          data: error.response.data
-        });
-        errorMessage = `❌ API Error: ${error.response.status}`;
-      } else if (error.request) {
-        // The request was made but no response was received
-        console.error('No response received:', error.request);
-        errorMessage = '❌ No response from API server';
-      } else {
-        // Something happened in setting up the request
-        console.error('Request Error:', error.message);
+        userMessage = `❌ API Error: ${error.response.status}`;
+      } else if (error.code === 'ECONNABORTED') {
+        userMessage = '❌ Request timed out. Please try again.';
       }
 
       await sendMessage(senderId, {
-        text: HEADER + errorMessage + FOOTER
+        text: HEADER + userMessage + FOOTER
       }, token);
     }
   }
 };
 
-const API_URL = 'https://api-library-kohi-production.up.railway.app/api/pollination-ai';
+// Updated to the copilot endpoint
+const API_URL = 'https://api-library-kohi-production.up.railway.app/api/copilot';
 const MAX_CHUNK = 1900;
 
-const HEADER = '💬 | 𝙶𝚛𝚘𝚔 𝙰𝚒\n・────────────・\n';
-const FOOTER = '\n・──── >ᴗ< ─────・';
+const HEADER = '\n';
+const FOOTER = '';
 
 function makeBold(text) {
   return text.replace(/\*\*(.+?)\*\*/g, (_, word) =>
