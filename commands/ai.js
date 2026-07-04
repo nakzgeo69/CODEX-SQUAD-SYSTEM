@@ -11,30 +11,66 @@ module.exports = {
     const prompt = args.join(' ').trim() || 'Hello';
 
     try {
+      // Log the request URL for debugging
+      const requestUrl = `${API_URL}?prompt=${encodeURIComponent(prompt)}&model=openai-large&user=${senderId}`;
+      console.log('Fetching:', requestUrl);
+
       const { data } = await axios.get(API_URL, {
         params: { 
-          prompt: prompt.replace(/ /g, '+'), // Replace spaces with + for URL
+          prompt: prompt,
           model: 'openai-large',
           user: senderId 
         },
         timeout: 15000
       });
 
-      if (!data?.status || typeof data.data !== 'string') {
-        throw new Error('Invalid API response');
+      // Log the full response for debugging
+      console.log('API Response:', JSON.stringify(data, null, 2));
+
+      // Check different possible response structures
+      let aiResponse = null;
+      
+      if (data?.data) {
+        aiResponse = data.data;
+      } else if (data?.response) {
+        aiResponse = data.response;
+      } else if (data?.result) {
+        aiResponse = data.result;
+      } else if (typeof data === 'string') {
+        aiResponse = data;
+      } else if (data?.message) {
+        aiResponse = data.message;
       }
 
-      const aiResponse = makeBold(data.data.trim());
-      await sendChunks(senderId, aiResponse, token);
+      if (!aiResponse) {
+        console.error('Unexpected response structure:', data);
+        throw new Error('Could not extract AI response');
+      }
+
+      const formattedResponse = makeBold(aiResponse.trim());
+      await sendChunks(senderId, formattedResponse, token);
 
     } catch (error) {
-      const reason = error.response
-        ? `API error ${error.response.status}`
-        : error.message ?? 'Unknown error';
+      let errorMessage = '❌ Something went wrong. Please try again.';
+      
+      if (error.response) {
+        // The request was made and the server responded with a status code
+        console.error('API Error Response:', {
+          status: error.response.status,
+          data: error.response.data
+        });
+        errorMessage = `❌ API Error: ${error.response.status}`;
+      } else if (error.request) {
+        // The request was made but no response was received
+        console.error('No response received:', error.request);
+        errorMessage = '❌ No response from API server';
+      } else {
+        // Something happened in setting up the request
+        console.error('Request Error:', error.message);
+      }
 
-      console.error(`[ai] Failed for sender ${senderId}: ${reason}`);
       await sendMessage(senderId, {
-        text: HEADER + '❌ Something went wrong. Please try again.' + FOOTER
+        text: HEADER + errorMessage + FOOTER
       }, token);
     }
   }
@@ -43,8 +79,8 @@ module.exports = {
 const API_URL = 'https://api-library-kohi-production.up.railway.app/api/pollination-ai';
 const MAX_CHUNK = 1900;
 
-const HEADER = '🔍 Responses:';
-const FOOTER = 'Created by GeoDevz69';
+const HEADER = '💬 | 𝙶𝚛𝚘𝚔 𝙰𝚒\n・────────────・\n';
+const FOOTER = '\n・──── >ᴗ< ─────・';
 
 function makeBold(text) {
   return text.replace(/\*\*(.+?)\*\*/g, (_, word) =>
