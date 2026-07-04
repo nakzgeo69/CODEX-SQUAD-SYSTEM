@@ -3,82 +3,117 @@ const { sendMessage } = require('../handles/sendMessage');
 
 module.exports = {
   name: 'ai',
-  description: 'Chat with AI',
-  usage: 'ai [message]',
+  description: 'Conversational AI - Just chat naturally',
+  usage: 'ai [your message]',
   author: 'coffee',
 
   async execute(senderId, args, token) {
-    const prompt = args.join(' ').trim() || 'Hello';
+    // Kunin ang buong message ng user (natural language)
+    const userMessage = args.join(' ').trim() || 'Hello';
 
     try {
-      // Using the copilot endpoint with gpt-5 model
-      const { data } = await axios.get(API_URL, {
-        params: { 
-          prompt: prompt,
-          model: 'gpt-5',  // Specify the model as required
-          user: senderId 
-        },
-        timeout: 15000
-      });
+      // Send typing indicator para alam nilang nag-iisip
+      await sendMessage(senderId, { typing: true }, token);
 
-      // Check for a successful response and extract text from data.text
-      if (!data?.status || !data?.data?.text) {
-        console.error('Unexpected API response:', data);
-        throw new Error('Invalid response structure from API');
-      }
-
-      const aiResponse = makeBold(data.data.text.trim());
-      await sendChunks(senderId, aiResponse, token);
+      // Try fast endpoints
+      const response = await getConversationalResponse(userMessage, senderId);
+      
+      // Clean response - remove unnecessary formatting
+      const cleanResponse = cleanConversationText(response);
+      
+      // Send as natural conversation
+      await sendMessage(senderId, {
+        text: cleanResponse
+      }, token);
 
     } catch (error) {
-      console.error(`[ai] Error for sender ${senderId}:`, error.message);
+      console.error('[AI Error]:', error.message);
       
-      let userMessage = '❌ Something went wrong. Please try again.';
-      if (error.response) {
-        userMessage = `❌ API Error: ${error.response.status}`;
-      } else if (error.code === 'ECONNABORTED') {
-        userMessage = '❌ Request timed out. Please try again.';
-      }
-
+      // Natural fallback response
+      const fallback = getNaturalFallback(userMessage);
       await sendMessage(senderId, {
-        text: HEADER + userMessage + FOOTER
+        text: fallback
       }, token);
     }
   }
 };
 
-// Updated to the copilot endpoint
-const API_URL = 'https://api-library-kohi-production.up.railway.app/api/copilot';
-const MAX_CHUNK = 1900;
+// Fast conversational endpoints
+const CONVERSATIONAL_ENDPOINTS = [
+  {
+    url: 'https://api-library-kohi-production.up.railway.app/api/publicai',
+    getParams: (prompt, user) => ({ 
+      prompt: prompt, 
+      user: user 
+    })
+  },
+  {
+    url: 'https://api-library-kohi-production.up.railway.app/api/copilot',
+    getParams: (prompt, user) => ({ 
+      prompt: prompt, 
+      model: 'gpt-3.5', 
+      user: user 
+    })
+  }
+];
 
-const HEADER = '\n';
-const FOOTER = '';
+async function getConversationalResponse(message, userId) {
+  // Subukan ang bawat endpoint
+  for (const endpoint of CONVERSATIONAL_ENDPOINTS) {
+    try {
+      const { data } = await axios.get(endpoint.url, {
+        params: endpoint.getParams(message, userId),
+        timeout: 3000
+      });
 
-function makeBold(text) {
-  return text.replace(/\*\*(.+?)\*\*/g, (_, word) =>
-    [...word].map(char => {
-      if (char >= 'a' && char <= 'z') return String.fromCharCode(char.charCodeAt(0) + 0x1D41A - 97);
-      if (char >= 'A' && char <= 'Z') return String.fromCharCode(char.charCodeAt(0) + 0x1D400 - 65);
-      if (char >= '0' && char <= '9') return String.fromCharCode(char.charCodeAt(0) + 0x1D7CE - 48);
-      return char;
-    }).join('')
-  );
+      // Extract response
+      let response = null;
+      if (data?.data?.text) response = data.data.text;
+      else if (data?.data) response = data.data;
+      else if (data?.response) response = data.response;
+      
+      if (response && typeof response === 'string') {
+        return response;
+      }
+    } catch (error) {
+      continue; // Try next endpoint
+    }
+  }
+  
+  // Pag walang gumana, use fallback
+  return getNaturalFallback(message);
 }
 
-function splitMessage(text) {
-  const chunks = [];
-  for (let i = 0; i < text.length; i += MAX_CHUNK) {
-    chunks.push(text.slice(i, i + MAX_CHUNK));
-  }
-  return chunks;
+function cleanConversationText(text) {
+  return text
+    .replace(/\*\*(.+?)\*\*/g, '$1') // Remove bold formatting
+    .replace(/#{1,6}\s?/g, '') // Remove headers
+    .replace(/\n{3,}/g, '\n\n') // Limit newlines
+    .replace(/\s{2,}/g, ' ') // Remove extra spaces
+    .trim();
 }
 
-async function sendChunks(senderId, text, token) {
-  const chunks = splitMessage(text);
-  for (let i = 0; i < chunks.length; i++) {
-    let msg = chunks[i];
-    if (i === 0) msg = HEADER + msg;
-    if (i === chunks.length - 1) msg += FOOTER;
-    await sendMessage(senderId, { text: msg }, token);
+// Natural conversational fallbacks
+function getNaturalFallback(message) {
+  const lower = message.toLowerCase().trim();
+  
+  const responses = {
+    'hello': 'Hey! How are you doing? 😊',
+    'hi': 'Hi there! What\'s up? 👋',
+    'kamusta': 'Okay naman! Ikaw, kamusta na?',
+    'musta': 'Okay lang! Ikaw musta?',
+    'thanks': 'You\'re welcome! 😊',
+    'salamat': 'Walang anuman! 👍',
+    'good morning': 'Good morning! Have a great day! ☀️',
+    'good night': 'Good night! Sleep well! 🌙',
+    'how are you': 'I\'m doing great! Thanks for asking! 😊',
+    'ano pangalan mo': 'Ako si AI, pwede mo kong tawaging kahit ano! 😄',
+    'sino ka': 'Ako ang iyong AI assistant! Ready to chat anytime! 🤖',
+    'default': 'Hmm, interesting! Tell me more about that. 🤔'
+  };
+  
+  for (const [key, response] of Object.entries(responses)) {
+    if (lower.includes(key)) return response;
   }
+  return responses.default;
 }
