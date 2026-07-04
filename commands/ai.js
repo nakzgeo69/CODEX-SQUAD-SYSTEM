@@ -3,122 +3,59 @@ const { sendMessage } = require('../handles/sendMessage');
 
 module.exports = {
   name: 'ai',
-  description: 'Multi-AI Assistant (GPT-4, Claude, Gemini)',
+  description: 'Chat with AI',
   usage: 'ai [message]',
   author: 'coffee',
 
   async execute(senderId, args, token) {
-    if (!args || args.length === 0) {
-      return sendMessage(senderId, {
-        text: '🌟 | MULTI-AI ASSISTANT\n・────────────・\n\nSupported Models:\n• GPT-4 (Best)\n• Claude 3\n• Gemini Pro\n• Llama 3\n\nUsage: ai [message]\nModel: GPT-4 by default'
-      }, token);
-    }
-
-    const prompt = args.join(' ').trim();
-    const model = args[0]?.startsWith('--') ? args.shift().replace('--', '') : 'gpt4';
-    
-    const models = {
-      gpt4: 'openai/gpt-4',
-      claude: 'anthropic/claude-3-opus',
-      gemini: 'google/gemini-pro',
-      llama: 'meta-llama/llama-3-70b-instruct'
-    };
-
-    const selectedModel = models[model] || models.gpt4;
+    const prompt = args.join(' ').trim() || 'Hello';
 
     try {
-      // Using OpenRouter for multiple AI models
-      const response = await axios.post('https://openrouter.ai/api/v1/chat/completions', {
-        model: selectedModel,
-        messages: [
-          {
-            role: 'system',
-            content: 'You are a highly intelligent AI assistant. Provide accurate, helpful, and detailed responses.'
-          },
-          {
-            role: 'user',
-            content: prompt
-          }
-        ],
-        max_tokens: 1500,
-        temperature: 0.7
-      }, {
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
-          'HTTP-Referer': 'https://github.com/yourbot',
-          'X-Title': 'AI Assistant'
+      const { data } = await axios.get(API_URL, {
+        params: { 
+          prompt: prompt.replace(/ /g, '+'), // Replace spaces with + for URL
+          model: 'openai-large',
+          user: senderId 
         },
-        timeout: 30000
+        timeout: 15000
       });
 
-      const aiResponse = response.data.choices[0].message.content.replace(/\\n/g, '\n').trim();
+      if (!data?.status || typeof data.data !== 'string') {
+        throw new Error('Invalid API response');
+      }
 
-      const modelNames = {
-        'openai/gpt-4': 'GPT-4',
-        'anthropic/claude-3-opus': 'Claude 3',
-        'google/gemini-pro': 'Gemini Pro',
-        'meta-llama/llama-3-70b-instruct': 'Llama 3'
-      };
-
-      const displayName = modelNames[selectedModel] || 'AI';
-
-      // Send in chunks if too long
-      await sendChunks(senderId, `🧠 | ${displayName}\n・────────────・\n\n${aiResponse}\n\n・──── >ᴗ< ─────・`, token);
+      const aiResponse = makeBold(data.data.trim());
+      await sendChunks(senderId, aiResponse, token);
 
     } catch (error) {
-      console.error('[AI Error]', error.response?.data || error.message);
-      
-      // Fallback to free APIs
-      try {
-        const fallback = await getFallbackAI(prompt);
-        await sendMessage(senderId, {
-          text: `🤖 | AI (Fallback)\n・────────────・\n\n${fallback}\n\n・──── >ᴗ< ─────・`
-        }, token);
-      } catch (fallbackError) {
-        await sendMessage(senderId, {
-          text: `❌ Error: ${error.message}\nPlease try again later.`
-        }, token);
-      }
+      const reason = error.response
+        ? `API error ${error.response.status}`
+        : error.message ?? 'Unknown error';
+
+      console.error(`[ai] Failed for sender ${senderId}: ${reason}`);
+      await sendMessage(senderId, {
+        text: HEADER + '❌ Something went wrong. Please try again.' + FOOTER
+      }, token);
     }
   }
 };
 
-// Fallback AI functions
-async function getFallbackAI(query) {
-  const apis = [
-    // Gemini Pro
-    async () => {
-      const res = await axios.get('https://api.kenliejugarap.com/gemini-pro/', {
-        params: { q: query },
-        timeout: 10000
-      });
-      return res.data?.response || null;
-    },
-    // Another free API
-    async () => {
-      const res = await axios.get('https://chatgpt-api.shn.hk/v1/', {
-        params: { q: query },
-        timeout: 10000
-      });
-      return res.data?.response || res.data?.text || null;
-    }
-  ];
-
-  for (const api of apis) {
-    try {
-      const result = await api();
-      if (result) return result;
-    } catch (e) {
-      continue;
-    }
-  }
-
-  return 'All AI services are currently unavailable. Please try again later.';
-}
-
-// Helper functions
+const API_URL = 'https://api-library-kohi-production.up.railway.app/api/pollination-ai';
 const MAX_CHUNK = 1900;
+
+const HEADER = '🔍 Responses:';
+const FOOTER = 'Created by GeoDevz69';
+
+function makeBold(text) {
+  return text.replace(/\*\*(.+?)\*\*/g, (_, word) =>
+    [...word].map(char => {
+      if (char >= 'a' && char <= 'z') return String.fromCharCode(char.charCodeAt(0) + 0x1D41A - 97);
+      if (char >= 'A' && char <= 'Z') return String.fromCharCode(char.charCodeAt(0) + 0x1D400 - 65);
+      if (char >= '0' && char <= '9') return String.fromCharCode(char.charCodeAt(0) + 0x1D7CE - 48);
+      return char;
+    }).join('')
+  );
+}
 
 function splitMessage(text) {
   const chunks = [];
@@ -130,7 +67,10 @@ function splitMessage(text) {
 
 async function sendChunks(senderId, text, token) {
   const chunks = splitMessage(text);
-  for (const chunk of chunks) {
-    await sendMessage(senderId, { text: chunk }, token);
+  for (let i = 0; i < chunks.length; i++) {
+    let msg = chunks[i];
+    if (i === 0) msg = HEADER + msg;
+    if (i === chunks.length - 1) msg += FOOTER;
+    await sendMessage(senderId, { text: msg }, token);
   }
 }
