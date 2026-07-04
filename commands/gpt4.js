@@ -50,7 +50,7 @@ module.exports = {
 const API_URL = 'https://api-library-kohi-production.up.railway.app/api/publicai';
 const MAX_CHUNK = 1900;
 
-const HEADER = '';
+const HEADER = '\n';
 const FOOTER = '';
 
 function makeBold(text) {
