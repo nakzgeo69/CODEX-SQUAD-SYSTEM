@@ -1,74 +1,72 @@
-const fs = require('fs');
-const path = require('path');
+const axios = require('axios');
 const { sendMessage } = require('../handles/sendMessage');
-
-const commandCategories = {
-  "📖 | 𝙴𝚍𝚞𝚌𝚊𝚝𝚒𝚘𝚗": ['ai'],
-  "🖼 | 𝙸𝚖𝚊𝚐𝚎": ['imagegen', 'pinterest'],
-  "🎧 | 𝙼𝚞𝚜𝚒𝚌": ['lyrics'],
-  "👥 | 𝙾𝚝𝚑𝚎𝚛𝚜": ['help']
-};
 
 module.exports = {
   name: 'help',
-  description: 'Show available commands',
-  usage: 'help\nhelp [command name]',
-  author: 'Coffee',
+  description: 'Chat with AI',
+  usage: 'help [message]',
+  author: '0xcodex',
 
-  execute(senderId, args, pageAccessToken) {
-    const commandsDir = path.join(__dirname, '../commands');
-    const commandFiles = fs.readdirSync(commandsDir).filter(f => f.endsWith('.js'));
+  async execute(senderId, args, token) {
+    const prompt = args.join(' ').trim() || 'Hello';
 
-    const loadCommand = file => {
-      try {
-        return require(path.join(commandsDir, file));
-      } catch {
-        return null;
+    try {
+      const { data } = await axios.get(API_URL, {
+        params: { ask: prompt },
+        timeout: 15000
+      });
+
+      if (!data?.success || !data?.message) {
+        throw new Error('Invalid API response');
       }
-    };
 
-    // If user asked for specific command
-    if (args.length) {
-      const name = args[0].toLowerCase();
-      const command = commandFiles.map(loadCommand).find(c => c?.name.toLowerCase() === name);
+      const aiResponse = makeBold(data.message.trim());
+      await sendChunks(senderId, aiResponse, token);
 
-      return sendMessage(
-        senderId,
-        {
-          text: command
-            ? `━━━━━━━━━━━━━━
-𝙲𝚘𝚖𝚖𝚊𝚗𝚍 𝙽𝚊𝚖𝚎: ${command.name}
-𝙳𝚎𝚜𝚌𝚛𝚒𝚙𝚝𝚒𝚘𝚗: ${command.description}
-𝚄𝚜𝚊𝚐𝚎: ${command.usage}
-━━━━━━━━━━━━━━`
-            : `Command "${name}" not found.`
-        },
-        pageAccessToken
-      );
+    } catch (error) {
+      const reason = error.response
+        ? `API error ${error.response.status}`
+        : error.message ?? 'Unknown error';
+
+      console.error(`[ai] Failed for sender ${senderId}: ${reason}`);
+      await sendMessage(senderId, {
+        text: HEADER + 'Please try again after 15 seconds.' + FOOTER
+      }, token);
     }
-
-    // Grouped help message by categories
-    const categorizedMessage = Object.entries(commandCategories)
-      .map(([category, commands]) => {
-        const listed = commands
-          .filter(cmd => commandFiles.includes(`${cmd}.js`))
-          .map(cmd => `│ - ${cmd}`)
-          .join('\n');
-        return `╭─╼━━━━━━━━╾─╮\n│ ${category}\n${listed}\n╰─━━━━━━━━━╾─╯`;
-      })
-      .join('\n');
-
-    sendMessage(
-      senderId,
-      {
-        text: `━━━━━━━━━━━━━━
-𝙰𝚟𝚊𝚒𝚕𝚊𝚋𝚕𝚎 𝙲𝚘𝚖𝚖𝚊𝚗𝚍𝚜:
-${categorizedMessage}
-Chat -help [name]   
-to see command details.
-━━━━━━━━━━━━━━`
-      },
-      pageAccessToken
-    );
   }
 };
+
+const API_URL = 'https://betadash-api-swordslush-production.up.railway.app/opera';
+const MAX_CHUNK = 1900;
+
+const HEADER = '\n';
+const FOOTER = '';
+
+function makeBold(text) {
+  return text.replace(/\*\*(.+?)\*\*/g, (_, word) =>
+    [...word].map(char => {
+      if (char >= 'a' && char <= 'z') return String.fromCharCode(char.charCodeAt(0) + 0x1D41A - 97);
+      if (char >= 'A' && char <= 'Z') return String.fromCharCode(char.charCodeAt(0) + 0x1D400 - 65);
+      if (char >= '0' && char <= '9') return String.fromCharCode(char.charCodeAt(0) + 0x1D7CE - 48);
+      return char;
+    }).join('')
+  );
+}
+
+function splitMessage(text) {
+  const chunks = [];
+  for (let i = 0; i < text.length; i += MAX_CHUNK) {
+    chunks.push(text.slice(i, i + MAX_CHUNK));
+  }
+  return chunks;
+}
+
+async function sendChunks(senderId, text, token) {
+  const chunks = splitMessage(text);
+  for (let i = 0; i < chunks.length; i++) {
+    let msg = chunks[i];
+    if (i === 0) msg = HEADER + msg;
+    if (i === chunks.length - 1) msg += FOOTER;
+    await sendMessage(senderId, { text: msg }, token);
+  }
+}
