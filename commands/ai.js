@@ -27,7 +27,7 @@ module.exports = {
                        greetingKeywords.some(word => prompt.toLowerCase() === word);
 
     if (isGreeting) {
-      const helpResponse = 'Hello! I\'m Teacher Arlene! Created by GeoDevz69. How can I assist you today?';
+      const helpResponse = 'Likewise! By the way I\'m Teacher Arlene! Created by GeoDevz69. How can I assist you today?';
       await sendMessage(senderId, { text: helpResponse }, token);
       return;
     }
