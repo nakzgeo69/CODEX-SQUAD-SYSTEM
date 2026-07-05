@@ -31,7 +31,7 @@ module.exports = {
     );
 
     if (isOwnerQuestion) {
-      const ownerResponse = 'Wow! Nice question, well my boss created me, you can contact him now\nhttps://www.facebook.com/geotechph.net';
+      const ownerResponse = 'Wow! Nice question, well my boss GeoDevz69 created me, you can contact him now\n\nhttps://www.facebook.com/geotechph.net';
       await sendMessage(senderId, { text: ownerResponse }, token);
       return;
     }
