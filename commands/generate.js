@@ -27,109 +27,98 @@ module.exports = {
     if (imageCount < 1) imageCount = 1;
 
     try {
-      const response = await axios.get('https://hiroshi-api.onrender.com/image/pinterest', {
-        params: { 
-          search: searchTerm,
-          limit: 100
-        }
-      });
-
-      let imageList = response.data?.data || [];
-      
       const cleanSearch = searchTerm.toLowerCase().trim();
       const searchWords = cleanSearch.split(/\s+/);
       
-      const filteredImages = imageList.filter(url => {
+      // Fetch multiple times para marami
+      let allImages = [];
+      
+      // Batch 1: Exact search
+      const response1 = await axios.get('https://hiroshi-api.onrender.com/image/pinterest', {
+        params: { search: searchTerm, limit: 100 }
+      });
+      allImages = [...allImages, ...(response1.data?.data || [])];
+      
+      // Batch 2: With random number para iba
+      const response2 = await axios.get('https://hiroshi-api.onrender.com/image/pinterest', {
+        params: { search: `${searchTerm} ${Date.now()}`, limit: 100 }
+      });
+      allImages = [...allImages, ...(response2.data?.data || [])];
+      
+      // Batch 3: First word lang pag maraming words
+      if (searchWords.length > 1) {
+        const response3 = await axios.get('https://hiroshi-api.onrender.com/image/pinterest', {
+          params: { search: searchWords[0], limit: 100 }
+        });
+        allImages = [...allImages, ...(response3.data?.data || [])];
+      }
+
+      if (allImages.length === 0) {
+        return sendMessage(senderId, { text: 'No images found' }, token);
+      }
+
+      // FILTER: Una, kunin ang exact matches
+      const exactMatches = allImages.filter(url => {
         if (!url) return false;
         const decodedUrl = decodeURIComponent(url).toLowerCase();
-        
-        const exactMatch = decodedUrl.includes(cleanSearch);
-        const dashMatch = decodedUrl.includes(cleanSearch.replace(/\s+/g, '-'));
-        const underscoreMatch = decodedUrl.includes(cleanSearch.replace(/\s+/g, '_'));
-        const allWordsMatch = searchWords.every(word => {
-          if (word.length < 2) return true;
-          return decodedUrl.includes(word);
-        });
-        
-        let matchCount = 0;
-        if (exactMatch) matchCount++;
-        if (dashMatch) matchCount++;
-        if (underscoreMatch) matchCount++;
-        if (allWordsMatch) matchCount++;
-        
-        return matchCount >= 2;
+        return decodedUrl.includes(cleanSearch) ||
+               decodedUrl.includes(cleanSearch.replace(/\s+/g, '-')) ||
+               decodedUrl.includes(cleanSearch.replace(/\s+/g, '_'));
       });
 
-      let finalImages = filteredImages;
+      // Pangalawa, kunin ang word matches
+      const wordMatches = allImages.filter(url => {
+        if (!url) return false;
+        const decodedUrl = decodeURIComponent(url).toLowerCase();
+        return searchWords.some(word => {
+          if (word.length < 2) return false;
+          return decodedUrl.includes(word);
+        });
+      });
+
+      // Pagsamahin - unahin ang exact
+      let finalImages = [...exactMatches];
       
+      // Magdagdag ng word matches kung kulang
       if (finalImages.length < imageCount) {
-        const fallbackImages = imageList.filter(url => {
-          if (!url) return false;
-          const decodedUrl = decodeURIComponent(url).toLowerCase();
-          return searchWords.some(word => {
-            if (word.length < 2) return false;
-            return decodedUrl.includes(word);
-          });
-        });
-        finalImages = [...filteredImages, ...fallbackImages];
+        for (const url of wordMatches) {
+          if (!finalImages.includes(url)) {
+            finalImages.push(url);
+          }
+          if (finalImages.length >= imageCount) break;
+        }
       }
 
+      // Kung kulang pa rin, kunin na lahat
+      if (finalImages.length < imageCount) {
+        for (const url of allImages) {
+          if (!finalImages.includes(url) && isValidUrl(url)) {
+            finalImages.push(url);
+          }
+          if (finalImages.length >= imageCount) break;
+        }
+      }
+
+      // Remove duplicates
       const uniqueImages = [];
-      const seenUrls = new Set();
-      
+      const seen = new Set();
       for (const url of finalImages) {
-        if (!seenUrls.has(url) && isValidUrl(url)) {
+        if (!seen.has(url) && isValidUrl(url)) {
           uniqueImages.push(url);
-          seenUrls.add(url);
+          seen.add(url);
         }
-        if (uniqueImages.length >= imageCount * 3) break;
+        if (uniqueImages.length >= imageCount) break;
       }
 
-      const shuffledImages = uniqueImages.sort(() => Math.random() - 0.5);
-      
-      const selectedImages = [];
-      const usedHashes = new Set();
-      
-      for (const url of shuffledImages) {
-        const urlHash = url.split('/').pop().split('?')[0];
-        if (!usedHashes.has(urlHash)) {
-          selectedImages.push(url);
-          usedHashes.add(urlHash);
-        }
-        if (selectedImages.length >= imageCount) break;
-      }
-
-      if (selectedImages.length < imageCount) {
-        const retryResponse = await axios.get('https://hiroshi-api.onrender.com/image/pinterest', {
-          params: { 
-            search: searchTerm,
-            limit: 100
-          }
-        });
-        
-        const retryImages = retryResponse.data?.data || [];
-        const retryFiltered = retryImages.filter(url => {
-          if (!url) return false;
-          const decodedUrl = decodeURIComponent(url).toLowerCase();
-          return decodedUrl.includes(cleanSearch);
-        });
-        
-        for (const url of retryFiltered) {
-          const urlHash = url.split('/').pop().split('?')[0];
-          if (!usedHashes.has(urlHash) && isValidUrl(url)) {
-            selectedImages.push(url);
-            usedHashes.add(urlHash);
-          }
-          if (selectedImages.length >= imageCount) break;
-        }
-      }
-
-      const resultImages = selectedImages.slice(0, imageCount);
+      // Shuffle para random
+      const shuffled = uniqueImages.sort(() => Math.random() - 0.5);
+      const resultImages = shuffled.slice(0, imageCount);
 
       if (resultImages.length === 0) {
         return sendMessage(senderId, { text: 'No images found' }, token);
       }
 
+      // Send images
       for (let i = 0; i < resultImages.length; i++) {
         const imageUrl = resultImages[i];
         if (imageUrl && isValidUrl(imageUrl)) {
