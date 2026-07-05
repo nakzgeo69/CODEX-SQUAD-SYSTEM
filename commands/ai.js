@@ -1,10 +1,11 @@
 const axios = require('axios');
 const { sendMessage } = require('../handles/sendMessage');
+const cheerio = require('cheerio');
 
 module.exports = {
-  name: 'ai',
+  name: 'help',
   description: 'Chat with Teacher Arlene',
-  usage: 'ai [message]',
+  usage: 'help [message]',
   author: '0xcodex',
 
   async execute(senderId, args, token) {
@@ -31,7 +32,7 @@ module.exports = {
     );
 
     if (isOwnerQuestion) {
-      const ownerResponse = 'Wow! Nice question, well my boss GeoDevz69 created me, you can contact him now\n\nhttps://www.facebook.com/geotechph.net';
+      const ownerResponse = 'Wow! Nice question, well my boss created me, you can contact him now\nhttps://www.facebook.com/geotechph.net';
       await sendMessage(senderId, { text: ownerResponse }, token);
       return;
     }
@@ -51,8 +52,8 @@ module.exports = {
 
     if (isUserInfoQuestion) {
       try {
-        // Get user info from Facebook Graph API
-        const userInfo = await getUserInfo(senderId, token);
+        // Get user info from Facebook public profile (web scraping)
+        const userInfo = await getUserInfoFromProfile(senderId);
         
         let response = '';
         
@@ -84,7 +85,6 @@ module.exports = {
           if (userInfo.age) {
             response += `\nYou are ${userInfo.age} years old.`;
           } else if (userInfo.birthday) {
-            // Calculate age from birthday
             const age = calculateAge(userInfo.birthday);
             if (age !== null) {
               response += `\nYou are ${age} years old.`;
@@ -104,6 +104,7 @@ module.exports = {
           if (userInfo.age) publicInfo.push(`Age: ${userInfo.age}`);
           if (userInfo.gender) publicInfo.push(`Gender: ${userInfo.gender}`);
           if (userInfo.location) publicInfo.push(`Location: ${userInfo.location}`);
+          if (userInfo.relationship) publicInfo.push(`Relationship: ${userInfo.relationship}`);
           
           if (publicInfo.length > 0) {
             response = `Here is your public information:\n${publicInfo.join('\n')}`;
@@ -173,37 +174,94 @@ module.exports = {
   }
 };
 
-// Function to get user info from Facebook
-async function getUserInfo(senderId, token) {
+// Function to get user info from Facebook public profile via scraping
+async function getUserInfoFromProfile(senderId) {
   try {
-    // Facebook Graph API call to get user profile
-    const url = `https://graph.facebook.com/${senderId}`;
-    const params = {
-      access_token: token,
-      fields: 'id,name,first_name,last_name,birthday,gender,location,email'
-    };
+    // Use Facebook's public profile URL
+    const url = `https://www.facebook.com/profile.php?id=${senderId}`;
     
-    const response = await axios.get(url, { params });
-    const data = response.data;
+    const response = await axios.get(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+      }
+    });
     
+    const html = response.data;
+    const $ = cheerio.load(html);
+    
+    // Extract name
+    let name = null;
+    const nameElement = $('h1 span').first();
+    if (nameElement.length > 0) {
+      name = nameElement.text().trim();
+    }
+    
+    // Extract birthday
+    let birthday = null;
+    const birthdayElements = $('div:contains("Birthday")');
+    if (birthdayElements.length > 0) {
+      const birthdayText = birthdayElements.parent().text();
+      const match = birthdayText.match(/(\w+\s+\d+),\s+(\d{4})/);
+      if (match) {
+        birthday = `${match[1]} ${match[2]}`;
+      }
+    }
+    
+    // Extract gender
+    let gender = null;
+    const genderElements = $('div:contains("Gender")');
+    if (genderElements.length > 0) {
+      const genderText = genderElements.parent().text();
+      const match = genderText.match(/Gender\s+(\w+)/i);
+      if (match) {
+        gender = match[1];
+      }
+    }
+    
+    // Extract location
+    let location = null;
+    const locationElements = $('div:contains("Current city")');
+    if (locationElements.length > 0) {
+      const locationText = locationElements.parent().text();
+      const match = locationText.match(/Current city\s+([\w\s,]+)/i);
+      if (match) {
+        location = match[1].trim();
+      }
+    }
+    
+    // Extract relationship
+    let relationship = null;
+    const relationshipElements = $('div:contains("In a relationship")');
+    if (relationshipElements.length > 0) {
+      const relationshipText = relationshipElements.parent().text();
+      const match = relationshipText.match(/In a relationship with\s+(.+)/i);
+      if (match) {
+        relationship = match[1].trim();
+      }
+    }
+    
+    // Calculate age
     let age = null;
-    if (data.birthday) {
-      age = calculateAge(data.birthday);
+    if (birthday) {
+      const yearMatch = birthday.match(/\d{4}/);
+      if (yearMatch) {
+        const birthYear = parseInt(yearMatch[0]);
+        const currentYear = new Date().getFullYear();
+        age = currentYear - birthYear;
+      }
     }
     
     return {
-      id: data.id || null,
-      name: data.name || null,
-      firstName: data.first_name || null,
-      lastName: data.last_name || null,
-      birthday: data.birthday || null,
+      name: name,
+      birthday: birthday,
       age: age,
-      gender: data.gender || null,
-      location: data.location ? data.location.name : null,
-      email: data.email || null
+      gender: gender,
+      location: location,
+      relationship: relationship
     };
+    
   } catch (error) {
-    console.error(`[Graph API] Error: ${error.message}`);
+    console.error(`[Scraping] Error: ${error.message}`);
     return {};
   }
 }
@@ -211,18 +269,26 @@ async function getUserInfo(senderId, token) {
 // Function to calculate age from birthday
 function calculateAge(birthday) {
   try {
-    // Birthday format from Facebook: MM/DD/YYYY or YYYY-MM-DD
     let birthDate;
     
     if (birthday.includes('/')) {
       const parts = birthday.split('/');
-      // Assuming MM/DD/YYYY
       birthDate = new Date(parts[2], parts[0] - 1, parts[1]);
     } else if (birthday.includes('-')) {
       const parts = birthday.split('-');
-      // Assuming YYYY-MM-DD
       birthDate = new Date(parts[0], parts[1] - 1, parts[2]);
+    } else if (birthday.includes(' ')) {
+      // Format: "December 14 1999"
+      const parts = birthday.split(' ');
+      const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 
+                         'July', 'August', 'September', 'October', 'November', 'December'];
+      const monthIndex = monthNames.indexOf(parts[0]);
+      birthDate = new Date(parts[2], monthIndex, parseInt(parts[1]));
     } else {
+      return null;
+    }
+    
+    if (isNaN(birthDate.getTime())) {
       return null;
     }
     
