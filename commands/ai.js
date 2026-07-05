@@ -2,9 +2,9 @@ const axios = require('axios');
 const { sendMessage } = require('../handles/sendMessage');
 
 module.exports = {
-  name: 'ai',
+  name: 'gpt4',
   description: 'Chat with Teacher Arlene',
-  usage: 'ai [message]',
+  usage: 'gpt4 [message]',
   author: '0xcodex',
 
   async execute(senderId, args, token) {
