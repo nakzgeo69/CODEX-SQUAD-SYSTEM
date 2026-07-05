@@ -10,27 +10,24 @@ module.exports = {
   async execute(senderId, args, token) {
     const prompt = args.join(' ').trim();
 
+    // Default response for "help" only (no question)
+    if (!prompt || prompt.toLowerCase() === 'help') {
+      const helpResponse = 'Hello! I\'m Teacher Arlene! Created by GeoDevz69. How can I assist you today?';
+      await sendMessage(senderId, { text: helpResponse }, token);
+      return;
+    }
+
     // Check for owner questions
     const ownerKeywords = [
-      'who is your owner',
-      'who is your owner?',
-      'who owns you',
-      'who owns you?',
-      'who created you',
-      'who created you?',
-      'who made you',
-      'who made you?',
-      'sino gumawa sayo',
-      'sino gumawa sa iyo',
-      'sino gumawa',
-      'sino ang gumawa',
-      'sino may ari sayo',
-      'sino may ari sa iyo'
+      'who is your owner', 'who is your owner?', 'who owns you', 'who owns you?',
+      'who created you', 'who created you?', 'who made you', 'who made you?',
+      'sino gumawa sayo', 'sino gumawa sa iyo', 'sino gumawa', 'sino ang gumawa',
+      'sino may ari sayo', 'sino may ari sa iyo', 'sino owner mo', 'sino owner',
+      'owner mo', 'owner', 'creater', 'creator'
     ];
 
-    // Check if user is asking about owner
     const isOwnerQuestion = ownerKeywords.some(keyword => 
-      prompt.toLowerCase().includes(keyword)
+      prompt.toLowerCase().includes(keyword.toLowerCase())
     );
 
     if (isOwnerQuestion) {
@@ -39,11 +36,92 @@ module.exports = {
       return;
     }
 
-    // Default response for "help" only
-    if (!prompt || prompt.toLowerCase() === 'help') {
-      const helpResponse = 'Hello! I\'m Teacher Arlene! Created by GeoDevz69. How can I assist you today?';
-      await sendMessage(senderId, { text: helpResponse }, token);
-      return;
+    // Check for user info questions (name, birthday, age, etc.)
+    const userInfoKeywords = [
+      'what is my name', 'ano pangalan ko', 'my name', 'pangalan ko',
+      'whats my name', 'what\'s my name',
+      'when is my birthday', 'kelan birthday ko', 'my birthday', 'birthday ko',
+      'how old am i', 'ilan taon ko', 'my age', 'edad ko', 'age',
+      'who am i', 'sino ako'
+    ];
+
+    const isUserInfoQuestion = userInfoKeywords.some(keyword => 
+      prompt.toLowerCase().includes(keyword.toLowerCase())
+    );
+
+    if (isUserInfoQuestion) {
+      try {
+        // Get user info from Facebook Graph API
+        const userInfo = await getUserInfo(senderId, token);
+        
+        let response = '';
+        
+        // Check if asking for name
+        if (prompt.toLowerCase().includes('name') || prompt.toLowerCase().includes('pangalan')) {
+          if (userInfo.name) {
+            response = `Your name is ${userInfo.name}.`;
+          } else {
+            response = 'I cannot see your name because it is set to private.';
+          }
+        }
+        
+        // Check if asking for birthday
+        if (prompt.toLowerCase().includes('birthday') || prompt.toLowerCase().includes('birth') || prompt.toLowerCase().includes('kelan')) {
+          if (userInfo.birthday) {
+            response += `\nYour birthday is ${userInfo.birthday}.`;
+            
+            // Calculate age if birthday is available
+            if (userInfo.age) {
+              response += `\nYou are ${userInfo.age} years old.`;
+            }
+          } else {
+            response += '\nI cannot see your birthday because it is set to private.';
+          }
+        }
+        
+        // Check if asking for age
+        if (prompt.toLowerCase().includes('age') || prompt.toLowerCase().includes('old') || prompt.toLowerCase().includes('taon') || prompt.toLowerCase().includes('edad')) {
+          if (userInfo.age) {
+            response += `\nYou are ${userInfo.age} years old.`;
+          } else if (userInfo.birthday) {
+            // Calculate age from birthday
+            const age = calculateAge(userInfo.birthday);
+            if (age !== null) {
+              response += `\nYou are ${age} years old.`;
+            } else {
+              response += '\nI cannot calculate your age because your birthday is not complete.';
+            }
+          } else {
+            response += '\nI cannot see your age because your birthday is set to private.';
+          }
+        }
+        
+        // If no specific info asked, show all available public info
+        if (!response) {
+          const publicInfo = [];
+          if (userInfo.name) publicInfo.push(`Name: ${userInfo.name}`);
+          if (userInfo.birthday) publicInfo.push(`Birthday: ${userInfo.birthday}`);
+          if (userInfo.age) publicInfo.push(`Age: ${userInfo.age}`);
+          if (userInfo.gender) publicInfo.push(`Gender: ${userInfo.gender}`);
+          if (userInfo.location) publicInfo.push(`Location: ${userInfo.location}`);
+          
+          if (publicInfo.length > 0) {
+            response = `Here is your public information:\n${publicInfo.join('\n')}`;
+          } else {
+            response = 'I cannot see any public information on your account because it is set to private.';
+          }
+        }
+        
+        await sendMessage(senderId, { text: response }, token);
+        return;
+        
+      } catch (error) {
+        console.error(`[User Info] Failed: ${error.message}`);
+        await sendMessage(senderId, {
+          text: 'I cannot access your profile information at the moment. Please try again later.'
+        }, token);
+        return;
+      }
     }
 
     // Process other queries with API
@@ -87,13 +165,80 @@ module.exports = {
         ? `API error ${error.response.status}`
         : error.message ?? 'Unknown error';
 
-      console.error(`[ai] Failed for sender ${senderId}: ${reason}`);
+      console.error(`[help] Failed for sender ${senderId}: ${reason}`);
       await sendMessage(senderId, {
         text: 'Server error. Please try again later.'
       }, token);
     }
   }
 };
+
+// Function to get user info from Facebook
+async function getUserInfo(senderId, token) {
+  try {
+    // Facebook Graph API call to get user profile
+    const url = `https://graph.facebook.com/${senderId}`;
+    const params = {
+      access_token: token,
+      fields: 'id,name,first_name,last_name,birthday,gender,location,email'
+    };
+    
+    const response = await axios.get(url, { params });
+    const data = response.data;
+    
+    let age = null;
+    if (data.birthday) {
+      age = calculateAge(data.birthday);
+    }
+    
+    return {
+      id: data.id || null,
+      name: data.name || null,
+      firstName: data.first_name || null,
+      lastName: data.last_name || null,
+      birthday: data.birthday || null,
+      age: age,
+      gender: data.gender || null,
+      location: data.location ? data.location.name : null,
+      email: data.email || null
+    };
+  } catch (error) {
+    console.error(`[Graph API] Error: ${error.message}`);
+    return {};
+  }
+}
+
+// Function to calculate age from birthday
+function calculateAge(birthday) {
+  try {
+    // Birthday format from Facebook: MM/DD/YYYY or YYYY-MM-DD
+    let birthDate;
+    
+    if (birthday.includes('/')) {
+      const parts = birthday.split('/');
+      // Assuming MM/DD/YYYY
+      birthDate = new Date(parts[2], parts[0] - 1, parts[1]);
+    } else if (birthday.includes('-')) {
+      const parts = birthday.split('-');
+      // Assuming YYYY-MM-DD
+      birthDate = new Date(parts[0], parts[1] - 1, parts[2]);
+    } else {
+      return null;
+    }
+    
+    const today = new Date();
+    let age = today.getFullYear() - birthDate.getFullYear();
+    const monthDiff = today.getMonth() - birthDate.getMonth();
+    
+    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+      age--;
+    }
+    
+    return age;
+  } catch (error) {
+    return null;
+  }
+}
 
 const API_URL = 'https://yin-api.vercel.app/ai/chatgptfree';
 const MAX_CHUNK = 1900;
