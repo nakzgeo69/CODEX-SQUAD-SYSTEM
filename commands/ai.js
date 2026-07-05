@@ -5,68 +5,41 @@ module.exports = {
   name: 'ai',
   description: 'Chat with AI',
   usage: 'ai [message]',
-  author: 'coffee',
+  author: '0xcodex',
 
   async execute(senderId, args, token) {
     const prompt = args.join(' ').trim() || 'Hello';
 
     try {
       const { data } = await axios.get(API_URL, {
-        params: { ask: prompt },
+        params: { prompt, model: 'chatgpt4' },
         timeout: 15000
       });
 
-      if (!data?.success || !data?.message) {
-        throw new Error('Invalid API response');
-      }
-
-      const aiResponse = makeBold(data.message.trim());
-      await sendChunks(senderId, aiResponse, token);
+      if (!data?.answer) throw new Error('Invalid API response');
+      
+      const reply = cleanText(data.answer.trim());
+      await sendMessage(senderId, { text: reply }, token);
 
     } catch (error) {
-      const reason = error.response
-        ? `API error ${error.response.status}`
-        : error.message ?? 'Unknown error';
-
-      console.error(`[ai] Failed for sender ${senderId}: ${reason}`);
-      await sendMessage(senderId, {
-        text: HEADER + 'Please try again after 15 seconds.' + FOOTER
+      console.error(`[AI Error] ${error.message}`);
+      await sendMessage(senderId, { 
+        text: error.response?.status === 404 ? 'API not found.' :
+              error.response?.status === 500 ? 'Server error.' :
+              error.code === 'ECONNABORTED' ? 'Timeout.' :
+              'Error. Please try again.' 
       }, token);
     }
   }
 };
 
-const API_URL = 'https://betadash-api-swordslush-production.up.railway.app/opera';
-const MAX_CHUNK = 1900;
+const API_URL = 'https://yin-api.vercel.app/ai/chatgptfree';
 
-const HEADER = '\n';
-const FOOTER = '';
-
-function makeBold(text) {
-  return text.replace(/\*\*(.+?)\*\*/g, (_, word) =>
-    [...word].map(char => {
-      if (char >= 'a' && char <= 'z') return String.fromCharCode(char.charCodeAt(0) + 0x1D41A - 97);
-      if (char >= 'A' && char <= 'Z') return String.fromCharCode(char.charCodeAt(0) + 0x1D400 - 65);
-      if (char >= '0' && char <= '9') return String.fromCharCode(char.charCodeAt(0) + 0x1D7CE - 48);
-      return char;
-    }).join('')
-  );
-}
-
-function splitMessage(text) {
-  const chunks = [];
-  for (let i = 0; i < text.length; i += MAX_CHUNK) {
-    chunks.push(text.slice(i, i + MAX_CHUNK));
-  }
-  return chunks;
-}
-
-async function sendChunks(senderId, text, token) {
-  const chunks = splitMessage(text);
-  for (let i = 0; i < chunks.length; i++) {
-    let msg = chunks[i];
-    if (i === 0) msg = HEADER + msg;
-    if (i === chunks.length - 1) msg += FOOTER;
-    await sendMessage(senderId, { text: msg }, token);
-  }
+function cleanText(text) {
+  return text
+    .replace(/[\u1D400-\u1D7FF]/g, '') // Remove mathematical bold
+    .replace(/[^\x00-\x7F]/g, '')       // Remove non-ASCII
+    .replace(/\s+/g, ' ')              // Fix spacing
+    .replace(/\s+([.,!?;:])/g, '$1')   // Fix punctuation
+    .trim();
 }
