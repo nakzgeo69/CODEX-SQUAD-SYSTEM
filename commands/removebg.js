@@ -9,9 +9,8 @@ module.exports = {
 
   async execute(senderId, args, token) {
     try {
-      const replied = args.replyTo;
-      
-      if (!replied) {
+      // Check if there's a reply
+      if (!args.replyTo) {
         await sendMessage(senderId, {
           text: '📸 Please reply to an image with removebg'
         }, token);
@@ -20,21 +19,49 @@ module.exports = {
 
       let imageUrl = null;
 
-      if (replied.attachments && replied.attachments.length > 0) {
-        for (const att of replied.attachments) {
+      // Log the replyTo structure for debugging
+      console.log('ReplyTo Structure:', JSON.stringify(args.replyTo, null, 2));
+
+      // Try different ways to get the image URL
+      if (args.replyTo.attachments && args.replyTo.attachments.length > 0) {
+        for (const att of args.replyTo.attachments) {
+          console.log('Attachment:', JSON.stringify(att, null, 2));
+          
           if (att.type === 'image' || att.type === 'photo') {
-            imageUrl = att.payload?.url || att.url || att.payload?.image_url;
+            imageUrl = att.payload?.url || 
+                      att.url || 
+                      att.payload?.image_url || 
+                      att.payload?.src ||
+                      att.src;
             if (imageUrl) break;
           }
         }
       }
 
+      // If still no imageUrl, try direct access
+      if (!imageUrl && args.replyTo.payload) {
+        imageUrl = args.replyTo.payload.url || 
+                  args.replyTo.payload.image_url || 
+                  args.replyTo.payload.src;
+      }
+
+      if (!imageUrl && args.replyTo.url) {
+        imageUrl = args.replyTo.url;
+      }
+
       if (!imageUrl) {
         await sendMessage(senderId, {
-          text: '❌ Please reply to an image.'
+          text: '❌ Could not find image in reply. Please make sure you replied to an image.'
         }, token);
         return;
       }
+
+      console.log('Extracted Image URL:', imageUrl);
+
+      // Send processing message
+      await sendMessage(senderId, {
+        text: '🔄 Removing background... Please wait.'
+      }, token);
 
       // Fetch the image as binary data
       const response = await axios.get(
@@ -42,11 +69,11 @@ module.exports = {
         {
           params: { imageUrl: imageUrl },
           responseType: 'arraybuffer',
-          timeout: 15000
+          timeout: 30000 // Increased timeout
         }
       );
 
-      // Convert the binary data to base64
+      // Convert to base64
       const base64Image = Buffer.from(response.data, 'binary').toString('base64');
       const dataUri = `data:image/png;base64,${base64Image}`;
 
@@ -62,21 +89,32 @@ module.exports = {
 
     } catch (error) {
       console.error('[removebg] Error:', error.message);
+      console.error('[removebg] Full Error:', error);
       
-      // Send the original image as fallback
-      const originalImage = args.replyTo?.attachments?.[0]?.payload?.url;
-      if (originalImage) {
-        await sendMessage(senderId, {
-          attachment: {
-            type: 'image',
-            payload: {
-              url: originalImage
+      // Try to send original image as fallback
+      try {
+        const originalImage = args.replyTo?.attachments?.[0]?.payload?.url || 
+                             args.replyTo?.payload?.url ||
+                             args.replyTo?.url;
+        
+        if (originalImage) {
+          await sendMessage(senderId, {
+            text: '⚠️ Failed to remove background. Here\'s your original image:',
+            attachment: {
+              type: 'image',
+              payload: {
+                url: originalImage
+              }
             }
-          }
-        }, token);
-      } else {
+          }, token);
+        } else {
+          await sendMessage(senderId, {
+            text: '❌ Failed to remove background. Please try again.'
+          }, token);
+        }
+      } catch (fallbackError) {
         await sendMessage(senderId, {
-          text: '❌ Failed to remove background. Please try again.'
+          text: '❌ Error processing image. Please try again.'
         }, token);
       }
     }
