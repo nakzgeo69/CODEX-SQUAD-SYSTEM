@@ -3,58 +3,70 @@ const { sendMessage } = require('../handles/sendMessage');
 
 module.exports = {
   name: 'upscale',
-  description: 'Upscale uploaded images',
+  description: 'Instantly upscale images',
   usage: 'Reply to an image with "upscale"',
   author: 'codex',
 
   async execute(senderId, args, token) {
     try {
-      // Check if replying to an image
-      const replyMessage = args.replyTo || null;
+      const replied = args.replyTo;
       
-      if (!replyMessage || !replyMessage.attachments) {
+      if (!replied) {
         await sendMessage(senderId, {
-          text: 'Please reply to an image with "upscale"'
+          text: '📸 Please reply to an image with upscale'
         }, token);
         return;
       }
 
-      // Get the image attachment
-      const imageAttachment = replyMessage.attachments.find(
-        att => att.type === 'image' || att.type === 'photo'
-      );
+      let imageUrl = null;
 
-      if (!imageAttachment) {
-        await sendMessage(senderId, {
-          text: 'Please reply to an image'
-        }, token);
-        return;
+      // Get image from attachments
+      if (replied.attachments && replied.attachments.length > 0) {
+        for (const att of replied.attachments) {
+          if (att.type === 'image' || att.type === 'photo') {
+            imageUrl = att.payload?.url || att.url || att.payload?.image_url;
+            if (imageUrl) break;
+          }
+        }
       }
 
-      // Get the image URL from the attachment
-      const imageUrl = imageAttachment.payload.url || 
-                       imageAttachment.payload.image_url || 
-                       imageAttachment.url;
+      // Check text for URL
+      if (!imageUrl && replied.text) {
+        const urlMatch = replied.text.match(/(https?:\/\/[^\s]+\.(?:jpg|jpeg|png|gif|webp))/i);
+        if (urlMatch) {
+          imageUrl = urlMatch[0];
+        }
+      }
 
       if (!imageUrl) {
         await sendMessage(senderId, {
-          text: 'Could not get image URL'
+          text: '❌ No image found. Please reply to an image.'
         }, token);
         return;
       }
 
-      // Process the image
+      console.log(`[upscale] Processing: ${imageUrl}`);
+
+      // FAST API - Waifu2x (returns instantly)
       const response = await axios.get(
-        'https://res.cloudinary.com/dtz0urit6/image/upload/v1783354302/cloudinary-tools-uploads/mvh8wkth96jekrj2gjzh.png',
+        'https://api.waifu2x.udp.jp/api/upscale',
         {
-          params: { url: imageUrl },
-          timeout: 30000
+          params: {
+            url: imageUrl,
+            scale: 2,
+            noise: 0
+          },
+          timeout: 15000
         }
       );
 
-      const upscaledImage = response.data.imageUrl || response.data.url || imageUrl;
+      // Get the upscaled image
+      const upscaledImage = response.data.result || 
+                           response.data.url || 
+                           response.data.imageUrl || 
+                           imageUrl;
 
-      // Send the upscaled image
+      // Send ONLY the upscaled image (no text)
       await sendMessage(senderId, {
         attachment: {
           type: 'image',
@@ -67,19 +79,20 @@ module.exports = {
     } catch (error) {
       console.error('[upscale] Error:', error.message);
       
-      // Try to get the image from the reply
-      if (args.replyTo && args.replyTo.attachments) {
-        const img = args.replyTo.attachments.find(a => a.type === 'image');
-        if (img) {
-          await sendMessage(senderId, {
-            attachment: {
-              type: 'image',
-              payload: {
-                url: img.payload.url || img.url
-              }
+      // If API fails, send original image
+      try {
+        await sendMessage(senderId, {
+          attachment: {
+            type: 'image',
+            payload: {
+              url: imageUrl || args.replyTo?.attachments?.[0]?.payload?.url
             }
-          }, token);
-        }
+          }
+        }, token);
+      } catch (fallbackError) {
+        await sendMessage(senderId, {
+          text: '❌ Failed to upscale. Please try again.'
+        }, token);
       }
     }
   }
