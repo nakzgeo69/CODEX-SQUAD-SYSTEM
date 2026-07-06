@@ -3,60 +3,32 @@ const { sendMessage } = require('../handles/sendMessage');
 
 module.exports = {
   name: 'removebg',
-  description: 'Remove background instantly',
-  usage: 'Reply to an image with "removebg"',
+  description: 'Remove background from image URL',
+  usage: 'removebg [image_url]',
   author: 'codex',
 
   async execute(senderId, args, token) {
     try {
-      // Check if there's a reply
-      if (!args.replyTo) {
-        await sendMessage(senderId, {
-          text: '📸 Please reply to an image with removebg'
-        }, token);
-        return;
-      }
-
-      let imageUrl = null;
-
-      // Log the replyTo structure for debugging
-      console.log('ReplyTo Structure:', JSON.stringify(args.replyTo, null, 2));
-
-      // Try different ways to get the image URL
-      if (args.replyTo.attachments && args.replyTo.attachments.length > 0) {
-        for (const att of args.replyTo.attachments) {
-          console.log('Attachment:', JSON.stringify(att, null, 2));
-          
-          if (att.type === 'image' || att.type === 'photo') {
-            imageUrl = att.payload?.url || 
-                      att.url || 
-                      att.payload?.image_url || 
-                      att.payload?.src ||
-                      att.src;
-            if (imageUrl) break;
-          }
-        }
-      }
-
-      // If still no imageUrl, try direct access
-      if (!imageUrl && args.replyTo.payload) {
-        imageUrl = args.replyTo.payload.url || 
-                  args.replyTo.payload.image_url || 
-                  args.replyTo.payload.src;
-      }
-
-      if (!imageUrl && args.replyTo.url) {
-        imageUrl = args.replyTo.url;
-      }
+      // Get the URL from args
+      const imageUrl = args.text?.trim() || args.join(' ');
 
       if (!imageUrl) {
         await sendMessage(senderId, {
-          text: '❌ Could not find image in reply. Please make sure you replied to an image.'
+          text: '📸 Please provide an image URL.\n\nUsage: removebg https://example.com/image.jpg'
         }, token);
         return;
       }
 
-      console.log('Extracted Image URL:', imageUrl);
+      // Validate if it's a URL
+      if (!imageUrl.match(/^https?:\/\/.+\/.+\.(jpg|jpeg|png|gif|webp|bmp)/i) && 
+          !imageUrl.match(/^https?:\/\/i\.ibb\.co\/.+/)) {
+        await sendMessage(senderId, {
+          text: '❌ Invalid image URL. Please provide a valid image URL.'
+        }, token);
+        return;
+      }
+
+      console.log('Processing image URL:', imageUrl);
 
       // Send processing message
       await sendMessage(senderId, {
@@ -69,7 +41,7 @@ module.exports = {
         {
           params: { imageUrl: imageUrl },
           responseType: 'arraybuffer',
-          timeout: 30000 // Increased timeout
+          timeout: 30000
         }
       );
 
@@ -89,34 +61,10 @@ module.exports = {
 
     } catch (error) {
       console.error('[removebg] Error:', error.message);
-      console.error('[removebg] Full Error:', error);
       
-      // Try to send original image as fallback
-      try {
-        const originalImage = args.replyTo?.attachments?.[0]?.payload?.url || 
-                             args.replyTo?.payload?.url ||
-                             args.replyTo?.url;
-        
-        if (originalImage) {
-          await sendMessage(senderId, {
-            text: '⚠️ Failed to remove background. Here\'s your original image:',
-            attachment: {
-              type: 'image',
-              payload: {
-                url: originalImage
-              }
-            }
-          }, token);
-        } else {
-          await sendMessage(senderId, {
-            text: '❌ Failed to remove background. Please try again.'
-          }, token);
-        }
-      } catch (fallbackError) {
-        await sendMessage(senderId, {
-          text: '❌ Error processing image. Please try again.'
-        }, token);
-      }
+      await sendMessage(senderId, {
+        text: '❌ Failed to remove background. Please check the URL and try again.\n\nError: ' + error.message
+      }, token);
     }
   }
 };
