@@ -5,7 +5,7 @@ module.exports = {
   name: 'removebg',
   description: 'Remove background instantly',
   usage: 'Reply to an image with "removebg"',
-  author: 'yazky',
+  author: 'codex',
 
   async execute(senderId, args, token) {
     try {
@@ -36,24 +36,26 @@ module.exports = {
         return;
       }
 
+      // Fetch the image as binary data
       const response = await axios.get(
         'https://betadash-api-swordslush-production.up.railway.app/removebg',
         {
           params: { imageUrl: imageUrl },
+          responseType: 'arraybuffer',
           timeout: 15000
         }
       );
 
-      const resultImage = response.data.imageUrl || 
-                         response.data.url || 
-                         response.data.result || 
-                         imageUrl;
+      // Convert the binary data to base64
+      const base64Image = Buffer.from(response.data, 'binary').toString('base64');
+      const dataUri = `data:image/png;base64,${base64Image}`;
 
+      // Send the processed image
       await sendMessage(senderId, {
         attachment: {
           type: 'image',
           payload: {
-            url: resultImage
+            url: dataUri
           }
         }
       }, token);
@@ -61,6 +63,7 @@ module.exports = {
     } catch (error) {
       console.error('[removebg] Error:', error.message);
       
+      // Send the original image as fallback
       const originalImage = args.replyTo?.attachments?.[0]?.payload?.url;
       if (originalImage) {
         await sendMessage(senderId, {
