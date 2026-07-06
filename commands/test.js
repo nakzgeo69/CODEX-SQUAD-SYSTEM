@@ -9,11 +9,11 @@ module.exports = {
 
   sessions: {},
 
-  async execute(senderId, args, token, sendMessage) {
+  async execute(senderId, args, token) {
     const input = args.join(" ");
     
     if (this.sessions[senderId]) {
-      await this.handleSession(senderId, input, token, sendMessage);
+      await this.handleSession(senderId, input, token);
       return;
     }
 
@@ -24,7 +24,7 @@ module.exports = {
       return;
     }
 
-    await this.testApi(senderId, input, {}, token, sendMessage);
+    await this.testApi(senderId, input, {}, token);
   },
 
   isValidUrl(url) {
@@ -36,7 +36,7 @@ module.exports = {
     }
   },
 
-  async testApi(senderId, url, params, token, sendMessage, method = 'GET', body = null) {
+  async testApi(senderId, url, params, token, method = 'GET', body = null) {
     try {
       const startTime = Date.now();
       
@@ -71,14 +71,14 @@ module.exports = {
       }
 
       const responseTime = Date.now() - startTime;
-      await this.sendFormattedResponse(senderId, response, responseTime, token, sendMessage);
+      await this.sendFormattedResponse(senderId, response, responseTime, token);
 
     } catch (error) {
-      await this.sendErrorResponse(senderId, error, url, token, sendMessage);
+      await this.sendErrorResponse(senderId, error, url, token);
     }
   },
 
-  async sendFormattedResponse(senderId, response, time, token, sendMessage) {
+  async sendFormattedResponse(senderId, response, time, token) {
     const isJson = typeof response.data === 'object' && response.data !== null;
     
     let output = `Status: ${response.status}\n`;
@@ -141,7 +141,7 @@ module.exports = {
     return null;
   },
 
-  async sendErrorResponse(senderId, error, url, token, sendMessage) {
+  async sendErrorResponse(senderId, error, url, token) {
     let output = '';
 
     if (error.code === 'ECONNABORTED') {
@@ -167,7 +167,7 @@ module.exports = {
     await sendMessage(senderId, { text: output.slice(0, 2000) }, token);
   },
 
-  async handleSession(senderId, input, token, sendMessage) {
+  async handleSession(senderId, input, token) {
     const session = this.sessions[senderId];
     
     try {
@@ -224,12 +224,12 @@ module.exports = {
         }
         method = session.method || 'GET';
         delete this.sessions[senderId];
-        await this.testApi(senderId, session.url, params, token, sendMessage, method, body);
+        await this.testApi(senderId, session.url, params, token, method, body);
         return;
       }
 
       delete this.sessions[senderId];
-      await this.testApi(senderId, session.url, params, token, sendMessage, 'GET');
+      await this.testApi(senderId, session.url, params, token, 'GET');
 
     } catch (error) {
       delete this.sessions[senderId];
