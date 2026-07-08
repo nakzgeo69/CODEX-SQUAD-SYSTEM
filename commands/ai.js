@@ -1,11 +1,9 @@
 const axios = require('axios');
 const { sendMessage } = require('../handles/sendMessage');
 
-// Configuration
+// Move API_URL to the top for clarity
 const API_URL = 'https://yin-api.vercel.app/ai/chatgptfree';
 const MAX_CHUNK = 1900;
-const MAX_RETRIES = 3;
-const RETRY_DELAY = 1000;
 
 module.exports = {
   name: 'ai',
@@ -13,333 +11,156 @@ module.exports = {
   usage: 'ai [message]',
   author: '0xcodex',
 
-  // Store conversation history per user
-  conversationHistory: new Map(),
-
   async execute(senderId, args, token) {
-    try {
-      const prompt = args.join(' ').trim();
+    const prompt = args.join(' ').trim();
 
-      // Handle empty or help commands
-      if (!prompt || prompt.toLowerCase() === 'help') {
-        await sendGreeting(senderId, token);
-        return;
-      }
+    // --- GREETING / HELP RESPONSE ---
+    // Return the "I'm Teacher Arlene" message for empty prompt, "help", or common greetings
+    const greetingKeywords = [
+      'hi', 'hello', 'hai', 'hey', 'greetings',
+      'good morning', 'good afternoon', 'good evening',
+      'hola', 'howdy', 'sup', 'yo'
+    ];
 
-      // Check for greeting keywords with conversational responses
-      if (isGreeting(prompt)) {
-        await sendConversationalGreeting(senderId, prompt, token);
-        return;
-      }
+    const isGreeting = !prompt ||
+                       prompt.toLowerCase() === 'help' ||
+                       greetingKeywords.some(word => prompt.toLowerCase() === word);
 
-      // Check for owner questions
-      if (isOwnerQuestion(prompt)) {
-        await sendOwnerResponse(senderId, token);
-        return;
-      }
-
-      // Check for user info questions
-      if (isUserInfoQuestion(prompt)) {
-        await handleUserInfo(senderId, prompt, token);
-        return;
-      }
-
-      // Check for follow-up questions
-      if (isFollowUpQuestion(prompt)) {
-        await handleFollowUp(senderId, prompt, token);
-        return;
-      }
-
-      // General AI query with retry mechanism
-      await handleAIQueryWithRetry(senderId, prompt, token);
-
-    } catch (error) {
-      console.error(`[AI] Error: ${error.message}`);
-      await sendMessage(senderId, { 
-        text: 'I apologize, but something went wrong. Could you please try again?' 
-      }, token);
-    }
-  }
-};
-
-// --- Conversation Handlers ---
-
-async function sendGreeting(senderId, token) {
-  const message = `Hi there! I'm Teacher Arlene, your AI assistant. I was created by GeoDevz69 to help you with questions, learning, and conversations.
-
-Feel free to ask me anything - I'm here to assist you. If you need help, just type "help" and I'll guide you.`;
-  
-  await sendMessage(senderId, { text: message }, token);
-}
-
-async function sendConversationalGreeting(senderId, prompt, token) {
-  const responses = [
-    `Hello! How are you doing today? I'm Teacher Arlene, and I'm excited to chat with you. What can I help you with?`,
-    
-    `Hey there! It's great to see you. I'm Teacher Arlene, your AI assistant. How can I make your day better?`,
-    
-    `Hi! I'm glad you're here. I'm Teacher Arlene, and I love having conversations. What's on your mind today?`,
-    
-    `Good to hear from you! I'm Teacher Arlene, and I'm ready to help with anything you need. What would you like to talk about?`,
-    
-    `Hello! I hope you're having a wonderful day. I'm Teacher Arlene, and I'm here to assist you. How can I help?`
-  ];
-  
-  // Select random response for variety
-  const response = responses[Math.floor(Math.random() * responses.length)];
-  await sendMessage(senderId, { text: response }, token);
-}
-
-async function sendOwnerResponse(senderId, token) {
-  const message = `That's a great question! I was created by GeoDevz69, who is an amazing developer. You can connect with him through his Facebook page:
-
-https://www.facebook.com/geotechph.net
-
-He's the brilliant mind behind my intelligence and capabilities. Is there anything else you'd like to know about my creator?`;
-  
-  await sendMessage(senderId, { text: message }, token);
-}
-
-async function handleUserInfo(senderId, prompt, token) {
-  try {
-    const userInfo = await getUserInfo(senderId, token);
-    let response = '';
-
-    if (prompt.toLowerCase().includes('name') || prompt.toLowerCase().includes('pangalan')) {
-      response = userInfo.name 
-        ? `I can see that your name is ${userInfo.name}. That's a wonderful name!` 
-        : 'I apologize, but I cannot access your name due to privacy settings.';
+    if (isGreeting) {
+      const helpResponse = 'Likewise! By the way I\'m Teacher Arlene! Created by GeoDevz69. How can I assist you today?';
+      await sendMessage(senderId, { text: helpResponse }, token);
+      return;
     }
 
-    if (prompt.toLowerCase().includes('birthday') || prompt.toLowerCase().includes('birth') || prompt.toLowerCase().includes('kelan')) {
-      const birthdayMsg = userInfo.birthday 
-        ? `Your birthday is ${userInfo.birthday}. That's great to know!` 
-        : 'I apologize, but I cannot access your birthday due to privacy settings.';
-      response += response ? `\n${birthdayMsg}` : birthdayMsg;
+    // --- OWNER QUESTIONS ---
+    const ownerKeywords = [
+      'who is your owner', 'who is your owner?', 'who owns you', 'who owns you?',
+      'who created you', 'who created you?', 'who made you', 'who made you?',
+      'sino gumawa sayo', 'sino gumawa sa iyo', 'sino gumawa', 'sino ang gumawa',
+      'sino may ari sayo', 'sino may ari sa iyo', 'sino owner mo', 'sino owner',
+      'owner mo', 'owner', 'creater', 'creator'
+    ];
+
+    const isOwnerQuestion = ownerKeywords.some(keyword =>
+      prompt.toLowerCase().includes(keyword.toLowerCase())
+    );
+
+    if (isOwnerQuestion) {
+      const ownerResponse = 'Wow! Nice question, well my boss GeoDevz69 created me, you can contact him with this link below.\n\nhttps://www.facebook.com/geotechph.net';
+      await sendMessage(senderId, { text: ownerResponse }, token);
+      return;
     }
 
-    if (!response) {
-      const publicInfo = [];
-      if (userInfo.name) publicInfo.push(`Name: ${userInfo.name}`);
-      if (userInfo.birthday) publicInfo.push(`Birthday: ${userInfo.birthday}`);
-      if (userInfo.gender) publicInfo.push(`Gender: ${userInfo.gender}`);
-      if (userInfo.location) publicInfo.push(`Location: ${userInfo.location}`);
+    // --- USER INFO QUESTIONS (name, birthday, etc.) ---
+    const userInfoKeywords = [
+      'what is my name', 'ano pangalan ko', 'my name', 'pangalan ko',
+      'whats my name', 'what\'s my name',
+      'when is my birthday', 'kelan birthday ko', 'my birthday', 'birthday ko',
+      'who am i', 'sino ako'
+    ];
 
-      response = publicInfo.length > 0
-        ? `Based on your public profile, here's what I can see:\n${publicInfo.join('\n')}\n\nIs there anything else you'd like to know?`
-        : 'I apologize, but I cannot access your public information due to privacy settings. Please check your Facebook privacy settings if you want to share this information.';
-    }
+    const isUserInfoQuestion = userInfoKeywords.some(keyword =>
+      prompt.toLowerCase().includes(keyword.toLowerCase())
+    );
 
-    await sendMessage(senderId, { text: response }, token);
+    if (isUserInfoQuestion) {
+      try {
+        const userInfo = await getUserInfo(senderId, token);
 
-  } catch (error) {
-    console.error(`[User Info] Failed: ${error.message}`);
-    await sendMessage(senderId, { 
-      text: 'I encountered an error while trying to access your information. Could you please try again in a moment?' 
-    }, token);
-  }
-}
+        let response = '';
 
-async function handleFollowUp(senderId, prompt, token) {
-  const history = module.exports.conversationHistory.get(senderId);
-  
-  if (!history || history.length === 0) {
-    await sendMessage(senderId, { 
-      text: 'I don\'t recall our previous conversation. Could you remind me what we were talking about, or ask a new question?' 
-    }, token);
-    return;
-  }
+        if (prompt.toLowerCase().includes('name') || prompt.toLowerCase().includes('pangalan')) {
+          if (userInfo.name) {
+            response = `Your name is ${userInfo.name}.`;
+          } else {
+            response = 'I can\'t tell you about that because it\'s confidential.';
+          }
+        }
 
-  const lastExchange = history[history.length - 1];
-  const followUpResponse = `I see you're asking about "${prompt}". Let me elaborate on that based on our previous discussion about "${lastExchange.user}".
+        if (prompt.toLowerCase().includes('birthday') || prompt.toLowerCase().includes('birth') || prompt.toLowerCase().includes('kelan')) {
+          if (userInfo.birthday) {
+            response += `\nYour birthday is ${userInfo.birthday}.`;
+          } else {
+            response += '\nI can\'t tell you about that because it\'s confidential.';
+          }
+        }
 
-I understand you want more information about this topic. Here's another perspective...`;
+        if (!response) {
+          const publicInfo = [];
+          if (userInfo.name) publicInfo.push(`Name: ${userInfo.name}`);
+          if (userInfo.birthday) publicInfo.push(`Birthday: ${userInfo.birthday}`);
+          if (userInfo.gender) publicInfo.push(`Gender: ${userInfo.gender}`);
+          if (userInfo.location) publicInfo.push(`Location: ${userInfo.location}`);
 
-  // Send follow-up response with context
-  await sendMessage(senderId, { text: followUpResponse }, token);
-  
-  // Then process the actual query with context
-  await handleAIQueryWithRetry(senderId, `${lastExchange.user} - Follow up: ${prompt}`, token);
-}
+          if (publicInfo.length > 0) {
+            response = `Here is your public information:\n${publicInfo.join('\n')}`;
+          } else {
+            response = 'I can\'t tell you about that because it\'s confidential.';
+          }
+        }
 
-async function handleAIQueryWithRetry(senderId, prompt, token) {
-  let lastError = null;
-  
-  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-    try {
-      // Show thinking indicator (only on first attempt)
-      if (attempt === 1) {
-        await sendMessage(senderId, { 
-          text: 'Let me think about that for a moment...' 
+        await sendMessage(senderId, { text: response }, token);
+        return;
+
+      } catch (error) {
+        console.error(`[User Info] Failed: ${error.message}`);
+        await sendMessage(senderId, {
+          text: 'Please try again after 15.0s.'
         }, token);
+        return;
       }
+    }
 
-      // Get conversation context
-      const context = getConversationContext(senderId);
-      
-      // Prepare prompt with context for more conversational responses
-      const enhancedPrompt = context 
-        ? `Previous conversation:\n${context}\n\nUser: ${prompt}\nAssistant: Please provide a natural, conversational response that continues the discussion naturally.` 
-        : `User: ${prompt}\nAssistant: Please provide a friendly, conversational response that feels like a natural human conversation.`;
-
+    // --- GENERAL AI QUERY (using API) ---
+    try {
       const { data } = await axios.get(API_URL, {
         params: {
-          prompt: enhancedPrompt,
+          prompt: prompt,
           model: 'chatgpt4'
         },
-        timeout: 20000
+        timeout: 15000
       });
 
       if (!data?.answer) {
         throw new Error('Invalid API response');
       }
 
-      let aiResponse = formatResponse(data.answer.trim());
-      
-      // Store conversation history
-      updateConversationHistory(senderId, prompt, aiResponse);
-      
+      let aiResponse = data.answer.trim();
+
+      // Formatting: convert **bold** to *bold* (Messenger style)
+      aiResponse = aiResponse.replace(/\*\*(.+?)\*\*/g, '*$1*');
+      aiResponse = aiResponse.replace(/\*/g, '');
+      aiResponse = aiResponse.replace(/#{1,6}\s/g, '');
+      aiResponse = aiResponse.replace(/---+/g, '');
+      aiResponse = aiResponse.replace(/__/g, '');
+      aiResponse = aiResponse.replace(/_/g, '');
+
+      // Remove emojis
+      aiResponse = aiResponse.replace(/[\u{1F000}-\u{1FFFF}]/gu, '');
+      aiResponse = aiResponse.replace(/[\u{2600}-\u{27BF}]/gu, '');
+      aiResponse = aiResponse.replace(/[\u{FE00}-\u{FEFF}]/gu, '');
+
+      // Clean up extra whitespace
+      aiResponse = aiResponse.replace(/\n{3,}/g, '\n\n');
+      aiResponse = aiResponse.replace(/[ \t]+/g, ' ');
+      aiResponse = aiResponse.trim();
+
       await sendChunks(senderId, aiResponse, token);
-      return;
 
     } catch (error) {
-      lastError = error;
-      console.error(`[AI Query] Attempt ${attempt} failed: ${error.message}`);
-      
-      if (attempt < MAX_RETRIES) {
-        await sendMessage(senderId, { 
-          text: `I'm having trouble connecting. Let me try again (Attempt ${attempt + 1} of ${MAX_RETRIES})...` 
-        }, token);
-        await sleep(RETRY_DELAY * attempt);
-      }
+      const reason = error.response
+        ? `API error ${error.response.status}`
+        : error.message ?? 'Unknown error';
+
+      console.error(`[ai] Failed for sender ${senderId}: ${reason}`);
+      await sendMessage(senderId, {
+        text: 'Server error. Please try again later.'
+      }, token);
     }
   }
+};
 
-  await handleQueryError(senderId, lastError, token);
-}
-
-async function handleQueryError(senderId, error, token) {
-  let errorMessage = 'I apologize, but I couldn\'t get a response. Could you please try again?';
-  
-  if (error.code === 'ECONNABORTED') {
-    errorMessage = 'I\'m sorry, but the response is taking too long. The server might be busy. Could you please try again in a moment?';
-  } else if (error.response) {
-    if (error.response.status === 429) {
-      errorMessage = 'I apologize, but we\'re experiencing high traffic right now. Please wait a moment before trying again.';
-    } else if (error.response.status === 503) {
-      errorMessage = 'The AI service is currently unavailable. Please try again later, and I\'ll be here to help.';
-    } else {
-      errorMessage = `I'm sorry, but there's a server issue (Error ${error.response.status}). Could you please try again later?`;
-    }
-  } else if (error.message.includes('ECONNREFUSED')) {
-    errorMessage = 'I\'m having trouble connecting to my services. Please check your internet connection and try again.';
-  }
-
-  await sendMessage(senderId, { text: errorMessage }, token);
-}
-
-// --- Conversation History Management ---
-
-function getConversationContext(senderId) {
-  const history = module.exports.conversationHistory.get(senderId);
-  if (!history || history.length === 0) return null;
-  
-  const lastExchanges = history.slice(-3);
-  return lastExchanges.map(exchange => 
-    `User: ${exchange.user}\nAssistant: ${exchange.assistant}`
-  ).join('\n\n');
-}
-
-function updateConversationHistory(senderId, userMsg, assistantMsg) {
-  if (!module.exports.conversationHistory.has(senderId)) {
-    module.exports.conversationHistory.set(senderId, []);
-  }
-  
-  const history = module.exports.conversationHistory.get(senderId);
-  history.push({ user: userMsg, assistant: assistantMsg });
-  
-  if (history.length > 10) {
-    history.shift();
-  }
-}
-
-// --- Helper Functions ---
-
-function isGreeting(prompt) {
-  const greetings = [
-    'hi', 'hello', 'hai', 'hey', 'greetings',
-    'good morning', 'good afternoon', 'good evening',
-    'hola', 'howdy', 'sup', 'yo', 'hey there'
-  ];
-  return greetings.some(word => prompt.toLowerCase() === word);
-}
-
-function isOwnerQuestion(prompt) {
-  const keywords = [
-    'who is your owner', 'who owns you', 'who created you', 
-    'who made you', 'sino gumawa sayo', 'sino may ari sayo',
-    'owner mo', 'creator', 'creater', 'owner'
-  ];
-  return keywords.some(keyword => 
-    prompt.toLowerCase().includes(keyword.toLowerCase())
-  );
-}
-
-function isUserInfoQuestion(prompt) {
-  const keywords = [
-    'what is my name', 'ano pangalan ko', 'my name',
-    'when is my birthday', 'kelan birthday ko', 'my birthday',
-    'who am i', 'sino ako', 'my information', 'info about me'
-  ];
-  return keywords.some(keyword => 
-    prompt.toLowerCase().includes(keyword.toLowerCase())
-  );
-}
-
-function isFollowUpQuestion(prompt) {
-  const keywords = [
-    'another', 'more', 'elaborate', 'explain further',
-    'can you give', 'tell me more', 'additional',
-    'again', 'different', 'other'
-  ];
-  return keywords.some(keyword => 
-    prompt.toLowerCase().includes(keyword.toLowerCase())
-  );
-}
-
-function formatResponse(text) {
-  // Remove markdown formatting
-  let formatted = text
-    .replace(/\*\*(.+?)\*\*/g, '$1') // Convert bold to plain text
-    .replace(/\*/g, '')
-    .replace(/#{1,6}\s/g, '')
-    .replace(/---+/g, '')
-    .replace(/__/g, '')
-    .replace(/_/g, '');
-
-  // Remove all emojis and special characters
-  formatted = formatted
-    .replace(/[\u{1F000}-\u{1FFFF}]/gu, '')
-    .replace(/[\u{2600}-\u{27BF}]/gu, '')
-    .replace(/[\u{FE00}-\u{FEFF}]/gu, '')
-    .replace(/[\u{2000}-\u{206F}]/gu, '')
-    .replace(/[\u{2300}-\u{23FF}]/gu, '')
-    .replace(/[\u{2500}-\u{257F}]/gu, '')
-    .replace(/[\u{2580}-\u{259F}]/gu, '')
-    .replace(/[\u{25A0}-\u{25FF}]/gu, '')
-    .replace(/[\u{2700}-\u{27BF}]/gu, '')
-    .replace(/[\u{3000}-\u{303F}]/gu, '')
-    .replace(/[\u{3200}-\u{32FF}]/gu, '')
-    .replace(/[\u{3300}-\u{33FF}]/gu, '');
-
-  // Clean up whitespace
-  formatted = formatted
-    .replace(/\n{3,}/g, '\n\n')
-    .replace(/[ \t]+/g, ' ')
-    .trim();
-
-  return formatted || 'I got your message, but I\'m not sure how to respond. Could you rephrase that for me?';
-}
+// --- HELPER FUNCTIONS ---
 
 async function getUserInfo(senderId, token) {
   try {
@@ -379,12 +200,5 @@ async function sendChunks(senderId, text, token) {
   const chunks = splitMessage(text);
   for (let i = 0; i < chunks.length; i++) {
     await sendMessage(senderId, { text: chunks[i] }, token);
-    if (i < chunks.length - 1) {
-      await sleep(100);
-    }
   }
-}
-
-function sleep(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
 }
