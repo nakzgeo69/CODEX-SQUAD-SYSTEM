@@ -1,11 +1,11 @@
 const axios = require('axios');
 const { sendMessage } = require('../handles/sendMessage');
 
+// Configuration
 const API_URL = 'https://yin-api.vercel.app/ai/chatgptfree';
 const MAX_CHUNK = 1900;
-const MAX_HISTORY = 6;
-
-const conversationHistory = new Map();
+const MAX_RETRIES = 3;
+const RETRY_DELAY = 1000;
 
 module.exports = {
   name: 'ai',
@@ -13,74 +13,91 @@ module.exports = {
   usage: 'ai [message]',
   author: '0xcodex',
 
+  // Store conversation history per user
+  conversationHistory: new Map(),
+
   async execute(senderId, args, token) {
-    const prompt = args.join(' ').trim();
+    try {
+      const prompt = args.join(' ').trim();
 
-    if (!prompt) {
+      // Handle empty or help commands
+      if (!prompt || prompt.toLowerCase() === 'help') {
+        await sendGreeting(senderId, token);
+        return;
+      }
+
+      // Check for greeting keywords with conversational responses
+      if (isGreeting(prompt)) {
+        await sendConversationalGreeting(senderId, prompt, token);
+        return;
+      }
+
+      // Check for owner questions
+      if (isOwnerQuestion(prompt)) {
+        await sendOwnerResponse(senderId, token);
+        return;
+      }
+
+      // Check for user info questions
+      if (isUserInfoQuestion(prompt)) {
+        await handleUserInfo(senderId, prompt, token);
+        return;
+      }
+
+      // Check for follow-up questions
+      if (isFollowUpQuestion(prompt)) {
+        await handleFollowUp(senderId, prompt, token);
+        return;
+      }
+
+      // General AI query with retry mechanism
+      await handleAIQueryWithRetry(senderId, prompt, token);
+
+    } catch (error) {
+      console.error(`[AI] Error: ${error.message}`);
       await sendMessage(senderId, { 
-        text: 'Hello! I\'m Teacher Arlene. How can I help you today?' 
+        text: 'I apologize, but something went wrong. Could you please try again?' 
       }, token);
-      return;
     }
-
-    if (await handleCommands(senderId, prompt, token)) {
-      return;
-    }
-
-    await processAIQuery(senderId, prompt, token);
   }
 };
 
-async function handleCommands(senderId, prompt, token) {
-  const lowerPrompt = prompt.toLowerCase();
+// --- Conversation Handlers ---
 
-  if (lowerPrompt === 'help') {
-    await sendMessage(senderId, { 
-      text: 'Commands:\n- help: Show menu\n- clear: Reset conversation\n- hi/hello: Start fresh\n\n💡 Just reply to my responses naturally!' 
-    }, token);
-    return true;
-  }
+async function sendGreeting(senderId, token) {
+  const message = `Hi there! I'm Teacher Arlene, your AI assistant. I was created by GeoDevz69 to help you with questions, learning, and conversations.
 
-  if (lowerPrompt === 'clear' || lowerPrompt === 'reset') {
-    conversationHistory.delete(senderId);
-    await sendMessage(senderId, { 
-      text: 'Conversation cleared. Starting fresh!' 
-    }, token);
-    return true;
-  }
+Feel free to ask me anything - I'm here to assist you. If you need help, just type "help" and I'll guide you.`;
+  
+  await sendMessage(senderId, { text: message }, token);
+}
 
-  const greetings = ['hi', 'hello', 'hey', 'halo', 'musta', 'kamusta', 'good morning', 'good afternoon', 'good evening'];
-  if (greetings.some(g => lowerPrompt === g)) {
-    conversationHistory.delete(senderId);
-    await sendMessage(senderId, { 
-      text: 'Hello! I\'m Teacher Arlene. What would you like to discuss?' 
-    }, token);
-    return true;
-  }
-
-  const ownerKeywords = [
-    'who is your owner', 'who owns you', 'who created you', 'who made you',
-    'sino gumawa sayo', 'sino may ari sayo', 'owner mo', 'creator mo'
+async function sendConversationalGreeting(senderId, prompt, token) {
+  const responses = [
+    `Hello! How are you doing today? I'm Teacher Arlene, and I'm excited to chat with you. What can I help you with?`,
+    
+    `Hey there! It's great to see you. I'm Teacher Arlene, your AI assistant. How can I make your day better?`,
+    
+    `Hi! I'm glad you're here. I'm Teacher Arlene, and I love having conversations. What's on your mind today?`,
+    
+    `Good to hear from you! I'm Teacher Arlene, and I'm ready to help with anything you need. What would you like to talk about?`,
+    
+    `Hello! I hope you're having a wonderful day. I'm Teacher Arlene, and I'm here to assist you. How can I help?`
   ];
   
-  if (ownerKeywords.some(keyword => lowerPrompt.includes(keyword))) {
-    await sendMessage(senderId, { 
-      text: 'My creator is GeoDevz69. Contact: https://www.facebook.com/geotechph.net' 
-    }, token);
-    return true;
-  }
+  // Select random response for variety
+  const response = responses[Math.floor(Math.random() * responses.length)];
+  await sendMessage(senderId, { text: response }, token);
+}
 
-  const userInfoKeywords = [
-    'my name', 'pangalan ko', 'what is my name', 'who am i', 'sino ako',
-    'my birthday', 'birthday ko', 'when is my birthday', 'kelan birthday ko'
-  ];
+async function sendOwnerResponse(senderId, token) {
+  const message = `That's a great question! I was created by GeoDevz69, who is an amazing developer. You can connect with him through his Facebook page:
+
+https://www.facebook.com/geotechph.net
+
+He's the brilliant mind behind my intelligence and capabilities. Is there anything else you'd like to know about my creator?`;
   
-  if (userInfoKeywords.some(keyword => lowerPrompt.includes(keyword))) {
-    await handleUserInfo(senderId, prompt, token);
-    return true;
-  }
-
-  return false;
+  await sendMessage(senderId, { text: message }, token);
 }
 
 async function handleUserInfo(senderId, prompt, token) {
@@ -88,314 +105,240 @@ async function handleUserInfo(senderId, prompt, token) {
     const userInfo = await getUserInfo(senderId, token);
     let response = '';
 
-    const lowerPrompt = prompt.toLowerCase();
-
-    if (lowerPrompt.includes('name') || lowerPrompt.includes('pangalan')) {
+    if (prompt.toLowerCase().includes('name') || prompt.toLowerCase().includes('pangalan')) {
       response = userInfo.name 
-        ? `Your name is ${userInfo.name}.` 
-        : 'Cannot access your name due to privacy.';
+        ? `I can see that your name is ${userInfo.name}. That's a wonderful name!` 
+        : 'I apologize, but I cannot access your name due to privacy settings.';
     }
 
-    if (lowerPrompt.includes('birthday') || lowerPrompt.includes('birth') || lowerPrompt.includes('kelan')) {
-      response += userInfo.birthday 
-        ? `\nYour birthday is ${userInfo.birthday}.` 
-        : '\nCannot access your birthday.';
+    if (prompt.toLowerCase().includes('birthday') || prompt.toLowerCase().includes('birth') || prompt.toLowerCase().includes('kelan')) {
+      const birthdayMsg = userInfo.birthday 
+        ? `Your birthday is ${userInfo.birthday}. That's great to know!` 
+        : 'I apologize, but I cannot access your birthday due to privacy settings.';
+      response += response ? `\n${birthdayMsg}` : birthdayMsg;
     }
 
     if (!response) {
-      const details = [];
-      if (userInfo.name) details.push(`Name: ${userInfo.name}`);
-      if (userInfo.birthday) details.push(`Birthday: ${userInfo.birthday}`);
-      if (userInfo.gender) details.push(`Gender: ${userInfo.gender}`);
-      if (userInfo.location) details.push(`Location: ${userInfo.location}`);
+      const publicInfo = [];
+      if (userInfo.name) publicInfo.push(`Name: ${userInfo.name}`);
+      if (userInfo.birthday) publicInfo.push(`Birthday: ${userInfo.birthday}`);
+      if (userInfo.gender) publicInfo.push(`Gender: ${userInfo.gender}`);
+      if (userInfo.location) publicInfo.push(`Location: ${userInfo.location}`);
 
-      response = details.length > 0 
-        ? `Information about you:\n${details.join('\n')}` 
-        : 'No information available.';
+      response = publicInfo.length > 0
+        ? `Based on your public profile, here's what I can see:\n${publicInfo.join('\n')}\n\nIs there anything else you'd like to know?`
+        : 'I apologize, but I cannot access your public information due to privacy settings. Please check your Facebook privacy settings if you want to share this information.';
     }
 
     await sendMessage(senderId, { text: response }, token);
+
   } catch (error) {
-    console.error(`[User Info] Error: ${error.message}`);
-    await sendMessage(senderId, {
-      text: 'Unable to retrieve information. Try again later.'
+    console.error(`[User Info] Failed: ${error.message}`);
+    await sendMessage(senderId, { 
+      text: 'I encountered an error while trying to access your information. Could you please try again in a moment?' 
     }, token);
   }
 }
 
-async function processAIQuery(senderId, prompt, token) {
-  try {
-    if (!conversationHistory.has(senderId)) {
-      conversationHistory.set(senderId, []);
-    }
-    
-    const history = conversationHistory.get(senderId);
-    
-    // --- GET LAST TOPIC FROM HISTORY ---
-    let lastTopic = '';
-    let lastAIResponse = '';
-    let lastUserMessage = '';
-    
-    for (let i = history.length - 1; i >= 0; i--) {
-      if (history[i].role === 'assistant' && !lastAIResponse) {
-        lastAIResponse = history[i].content;
-        lastTopic = extractTopic(lastAIResponse, history[i]?.language || 'en');
-        break;
+async function handleFollowUp(senderId, prompt, token) {
+  const history = module.exports.conversationHistory.get(senderId);
+  
+  if (!history || history.length === 0) {
+    await sendMessage(senderId, { 
+      text: 'I don\'t recall our previous conversation. Could you remind me what we were talking about, or ask a new question?' 
+    }, token);
+    return;
+  }
+
+  const lastExchange = history[history.length - 1];
+  const followUpResponse = `I see you're asking about "${prompt}". Let me elaborate on that based on our previous discussion about "${lastExchange.user}".
+
+I understand you want more information about this topic. Here's another perspective...`;
+
+  // Send follow-up response with context
+  await sendMessage(senderId, { text: followUpResponse }, token);
+  
+  // Then process the actual query with context
+  await handleAIQueryWithRetry(senderId, `${lastExchange.user} - Follow up: ${prompt}`, token);
+}
+
+async function handleAIQueryWithRetry(senderId, prompt, token) {
+  let lastError = null;
+  
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      // Show thinking indicator (only on first attempt)
+      if (attempt === 1) {
+        await sendMessage(senderId, { 
+          text: 'Let me think about that for a moment...' 
+        }, token);
       }
-    }
 
-    // Get last user message for context
-    for (let i = history.length - 1; i >= 0; i--) {
-      if (history[i].role === 'user' && !lastUserMessage) {
-        lastUserMessage = history[i].content;
-        break;
-      }
-    }
+      // Get conversation context
+      const context = getConversationContext(senderId);
+      
+      // Prepare prompt with context for more conversational responses
+      const enhancedPrompt = context 
+        ? `Previous conversation:\n${context}\n\nUser: ${prompt}\nAssistant: Please provide a natural, conversational response that continues the discussion naturally.` 
+        : `User: ${prompt}\nAssistant: Please provide a friendly, conversational response that feels like a natural human conversation.`;
 
-    // --- DETECT IF FOLLOW-UP (ALL LANGUAGES) ---
-    let isFollowUp = false;
-    const detectedLanguage = detectLanguage(prompt);
-    
-    // Follow-up patterns for ALL languages
-    const followUpPatterns = getFollowUpPatterns(detectedLanguage);
-    
-    // Check if prompt is a follow-up
-    const lowerPrompt = prompt.toLowerCase().trim();
-    
-    // Check 1: Short prompt (regardless of language)
-    if (prompt.length < 40) {
-      isFollowUp = true;
-    }
-    
-    // Check 2: Contains follow-up keywords in any language
-    if (followUpPatterns.some(pattern => lowerPrompt.includes(pattern))) {
-      isFollowUp = true;
-    }
-    
-    // Check 3: If it's a question about the last topic
-    if (lastTopic && lowerPrompt.includes(lastTopic.toLowerCase())) {
-      isFollowUp = true;
-    }
-    
-    // Check 4: If it references the previous message
-    const referenceWords = ['that', 'this', 'it', 'yan', 'ito', 'yun', 'nito', 'niyan', 'niyon', 'dito', 'doon', 'there', 'here'];
-    if (referenceWords.some(word => lowerPrompt.includes(word)) && history.length > 0) {
-      isFollowUp = true;
-    }
-
-    // --- BUILD CONTEXTUAL PROMPT ---
-    let contextualPrompt = '';
-
-    contextualPrompt += `You are Teacher Arlene, a friendly and conversational AI assistant.
-
-`;
-
-    // --- FOCUS ON LAST TOPIC IF FOLLOW-UP ---
-    if (isFollowUp && lastTopic) {
-      contextualPrompt += `IMPORTANT: The user is asking for more information about this topic: "${lastTopic}"
-
-The user's previous questions were about: "${lastTopic}"
-Keep your response focused on "${lastTopic}" and provide additional information.
-
-`;
-    }
-
-    // --- ADD CONVERSATION HISTORY ---
-    const recentHistory = history.slice(-6);
-    if (recentHistory.length > 0) {
-      contextualPrompt += 'Previous conversation:\n';
-      recentHistory.forEach(msg => {
-        if (msg.role === 'user') {
-          contextualPrompt += `User: ${msg.content}\n`;
-        } else if (msg.role === 'assistant') {
-          contextualPrompt += `Teacher Arlene: ${msg.content}\n`;
-        }
+      const { data } = await axios.get(API_URL, {
+        params: {
+          prompt: enhancedPrompt,
+          model: 'chatgpt4'
+        },
+        timeout: 20000
       });
-      contextualPrompt += '\n';
-    }
 
-    // --- ADD CURRENT QUESTION ---
-    contextualPrompt += `Current question: ${prompt}
+      if (!data?.answer) {
+        throw new Error('Invalid API response');
+      }
 
-Instructions:
-1. ${isFollowUp ? `Focus on "${lastTopic}" and provide more information` : 'Answer the question directly'}
-2. Keep the conversation flowing naturally
-3. If the user asks a short follow-up, connect it to the previous topic
-4. Provide clear, helpful information
-5. Ask a follow-up question to continue the conversation
-6. Respond in the same language as the user's question
+      let aiResponse = formatResponse(data.answer.trim());
+      
+      // Store conversation history
+      updateConversationHistory(senderId, prompt, aiResponse);
+      
+      await sendChunks(senderId, aiResponse, token);
+      return;
 
-Response:`;
-
-    // Add user message to history
-    history.push({
-      role: 'user',
-      content: prompt,
-      language: detectedLanguage
-    });
-
-    // Call API
-    const { data } = await axios.get(API_URL, {
-      params: {
-        prompt: contextualPrompt,
-        model: 'chatgpt4'
-      },
-      timeout: 20000
-    });
-
-    if (!data?.answer) {
-      throw new Error('No response from API');
-    }
-
-    let aiResponse = data.answer.trim();
-    aiResponse = formatResponse(aiResponse);
-
-    // Add AI response to history
-    history.push({
-      role: 'assistant',
-      content: aiResponse,
-      language: detectedLanguage
-    });
-
-    // Keep only last 6 messages
-    if (history.length > MAX_HISTORY * 2) {
-      history.splice(0, history.length - (MAX_HISTORY * 2));
-    }
-
-    conversationHistory.set(senderId, history);
-
-    await sendChunks(senderId, aiResponse, token);
-
-  } catch (error) {
-    console.error(`[AI] Error: ${error.message}`);
-    
-    let errorMsg = 'An error occurred. Please try again later.';
-    
-    if (error.code === 'ECONNABORTED') {
-      errorMsg = 'Connection timeout. Please try again.';
-    } else if (error.response?.status === 429) {
-      errorMsg = 'Too many requests. Please wait a moment.';
-    }
-    
-    await sendMessage(senderId, { text: errorMsg }, token);
-  }
-}
-
-// --- LANGUAGE DETECTION ---
-function detectLanguage(text) {
-  const patterns = {
-    tagalog: /[aeiou]/i,
-    cebuano: /[aeiou]/i,
-    ilocano: /[aeiou]/i,
-    spanish: /[áéíóúñ¿¡]/i,
-    french: /[éèêëàâçôûîï]/i,
-    japanese: /[\u3040-\u30FF\u4E00-\u9FFF]/,
-    korean: /[\uAC00-\uD7AF\u1100-\u11FF]/,
-    chinese: /[\u4E00-\u9FFF]/,
-    arabic: /[\u0600-\u06FF]/,
-    russian: /[\u0400-\u04FF]/
-  };
-
-  // Check for specific language patterns
-  for (const [lang, pattern] of Object.entries(patterns)) {
-    if (pattern.test(text)) {
-      return lang;
+    } catch (error) {
+      lastError = error;
+      console.error(`[AI Query] Attempt ${attempt} failed: ${error.message}`);
+      
+      if (attempt < MAX_RETRIES) {
+        await sendMessage(senderId, { 
+          text: `I'm having trouble connecting. Let me try again (Attempt ${attempt + 1} of ${MAX_RETRIES})...` 
+        }, token);
+        await sleep(RETRY_DELAY * attempt);
+      }
     }
   }
 
-  // Default to English
-  return 'en';
+  await handleQueryError(senderId, lastError, token);
 }
 
-// --- FOLLOW-UP PATTERNS FOR ALL LANGUAGES ---
-function getFollowUpPatterns(language) {
-  const patterns = {
-    // English
-    en: ['another', 'more', 'additional', 'next', 'other', 'else', 'example', 'explanation', 'details', 'further', 'about it', 'regarding', 'tell me', 'what about', 'how about', 'can you', 'could you', 'explain', 'elaborate', 'expand'],
-    
-    // Tagalog
-    tagalog: ['isa pa', 'iba pa', 'dagdag', 'karagdagan', 'susunod', 'iba', 'halimbawa', 'paliwanag', 'detalye', 'tungkol dito', 'tungkol sa', 'ano pa', 'paano', 'bakit', 'saan', 'kailan', 'sino', 'alin', 'magsabi', 'magbigay', 'isa pang', 'ibang'],
-    
-    // Cebuano
-    cebuano: ['laing', 'dugang', 'sunod', 'pananglitan', 'pagsabot', 'detalye', 'mahitungod niini', 'unsa pa', 'giunsa', 'ngano', 'asa', 'kanus-a', 'kinsa', 'hatag', 'laing pananglitan'],
-    
-    // Ilocano
-    ilocano: ['sabali', 'adu', 'sumaruno', 'halimbawa', 'palawag', 'detalye', 'maipapan iti', 'anyana', 'kasanu', 'apay', 'sadino', 'kaano', 'asino', 'ibaga', 'ited'],
-    
-    // Spanish
-    spanish: ['otro', 'más', 'adicional', 'siguiente', 'ejemplo', 'explicación', 'detalles', 'acerca de', 'sobre', 'dime', 'cuéntame', 'qué tal', 'cómo', 'por qué', 'dónde', 'cuándo', 'quién', 'cuál'],
-    
-    // French
-    french: ['autre', 'plus', 'supplémentaire', 'suivant', 'exemple', 'explication', 'détails', 'à propos', 'dis-moi', 'raconte-moi', 'comment', 'pourquoi', 'où', 'quand', 'qui', 'lequel'],
-    
-    // Japanese
-    japanese: ['別の', 'もっと', '追加', '次の', '例', '説明', '詳細', 'これについて', '教えて', '何て', 'どうやって', 'なぜ', 'どこ', 'いつ', '誰', 'どれ'],
-    
-    // Korean
-    korean: ['또 다른', '더', '추가', '다음', '예', '설명', '세부 정보', '이에 대해', '말해줘', '어떻게', '왜', '어디', '언제', '누가', '어느'],
-    
-    // Chinese
-    chinese: ['另一个', '更多', '额外', '下一个', '例子', '解释', '细节', '关于这个', '告诉我', '怎么', '为什么', '哪里', '什么时候', '谁', '哪个'],
-    
-    // Arabic
-    arabic: ['آخر', 'المزيد', 'إضافي', 'التالي', 'مثال', 'شرح', 'تفاصيل', 'حول هذا', 'أخبرني', 'كيف', 'لماذا', 'أين', 'متى', 'من', 'أي'],
-    
-    // Russian
-    russian: ['другой', 'больше', 'дополнительный', 'следующий', 'пример', 'объяснение', 'детали', 'об этом', 'скажи мне', 'как', 'почему', 'где', 'когда', 'кто', 'который']
-  };
-
-  return patterns[language] || patterns.en;
-}
-
-// --- EXTRACT TOPIC FROM AI RESPONSE ---
-function extractTopic(response, language) {
-  // Remove common phrases based on language
-  let topic = response;
+async function handleQueryError(senderId, error, token) {
+  let errorMessage = 'I apologize, but I couldn\'t get a response. Could you please try again?';
   
-  const commonPhrases = {
-    en: ['Oh', 'Wow', 'Hello', 'Hi', 'Hey', 'Great', 'Okay', 'Sure', 'Alright', 'Yes', 'No', 'Maybe', 'Actually', 'Well', 'So', 'Basically', 'Simply', 'Absolutely', 'Definitely', 'Certainly', 'Of course'],
-    tagalog: ['Oh', 'Wow', 'Hello', 'Hi', 'Hey', 'Sige', 'Oo', 'Hindi', 'Siguro', 'Talaga', 'Naman', 'Kaya', 'Kasi', 'Dahil', 'Eto', 'Ito', 'Yan', 'Ayan', 'Ganito', 'Ganyan'],
-    cebuano: ['Oh', 'Wow', 'Hello', 'Hi', 'Hey', 'Sige', 'Oo', 'Dili', 'Siguro', 'Jud', 'Kay', 'Mao', 'Kani', 'Kana', 'Ingon', 'Ani'],
-    ilocano: ['Oh', 'Wow', 'Hello', 'Hi', 'Hey', 'Sige', 'Wen', 'Saan', 'Siguro', 'Gayam', 'Ta', 'Daytoy', 'Dayta', 'Kastoy']
-  };
-
-  const phrases = commonPhrases[language] || commonPhrases.en;
-  
-  phrases.forEach(phrase => {
-    topic = topic.replace(new RegExp(`^${phrase}`, 'i'), '');
-  });
-
-  // Get first meaningful sentence
-  topic = topic.trim()
-    .split('.')[0]
-    .split(',')[0]
-    .split('?')[0]
-    .trim();
-
-  // Clean up
-  topic = topic.replace(/[^a-zA-Z0-9\s\-']/g, '');
-  
-  // If topic is too long, shorten
-  if (topic.length > 50) {
-    topic = topic.substring(0, 50).trim();
+  if (error.code === 'ECONNABORTED') {
+    errorMessage = 'I\'m sorry, but the response is taking too long. The server might be busy. Could you please try again in a moment?';
+  } else if (error.response) {
+    if (error.response.status === 429) {
+      errorMessage = 'I apologize, but we\'re experiencing high traffic right now. Please wait a moment before trying again.';
+    } else if (error.response.status === 503) {
+      errorMessage = 'The AI service is currently unavailable. Please try again later, and I\'ll be here to help.';
+    } else {
+      errorMessage = `I'm sorry, but there's a server issue (Error ${error.response.status}). Could you please try again later?`;
+    }
+  } else if (error.message.includes('ECONNREFUSED')) {
+    errorMessage = 'I\'m having trouble connecting to my services. Please check your internet connection and try again.';
   }
 
-  return topic || 'the topic we were discussing';
+  await sendMessage(senderId, { text: errorMessage }, token);
+}
+
+// --- Conversation History Management ---
+
+function getConversationContext(senderId) {
+  const history = module.exports.conversationHistory.get(senderId);
+  if (!history || history.length === 0) return null;
+  
+  const lastExchanges = history.slice(-3);
+  return lastExchanges.map(exchange => 
+    `User: ${exchange.user}\nAssistant: ${exchange.assistant}`
+  ).join('\n\n');
+}
+
+function updateConversationHistory(senderId, userMsg, assistantMsg) {
+  if (!module.exports.conversationHistory.has(senderId)) {
+    module.exports.conversationHistory.set(senderId, []);
+  }
+  
+  const history = module.exports.conversationHistory.get(senderId);
+  history.push({ user: userMsg, assistant: assistantMsg });
+  
+  if (history.length > 10) {
+    history.shift();
+  }
+}
+
+// --- Helper Functions ---
+
+function isGreeting(prompt) {
+  const greetings = [
+    'hi', 'hello', 'hai', 'hey', 'greetings',
+    'good morning', 'good afternoon', 'good evening',
+    'hola', 'howdy', 'sup', 'yo', 'hey there'
+  ];
+  return greetings.some(word => prompt.toLowerCase() === word);
+}
+
+function isOwnerQuestion(prompt) {
+  const keywords = [
+    'who is your owner', 'who owns you', 'who created you', 
+    'who made you', 'sino gumawa sayo', 'sino may ari sayo',
+    'owner mo', 'creator', 'creater', 'owner'
+  ];
+  return keywords.some(keyword => 
+    prompt.toLowerCase().includes(keyword.toLowerCase())
+  );
+}
+
+function isUserInfoQuestion(prompt) {
+  const keywords = [
+    'what is my name', 'ano pangalan ko', 'my name',
+    'when is my birthday', 'kelan birthday ko', 'my birthday',
+    'who am i', 'sino ako', 'my information', 'info about me'
+  ];
+  return keywords.some(keyword => 
+    prompt.toLowerCase().includes(keyword.toLowerCase())
+  );
+}
+
+function isFollowUpQuestion(prompt) {
+  const keywords = [
+    'another', 'more', 'elaborate', 'explain further',
+    'can you give', 'tell me more', 'additional',
+    'again', 'different', 'other'
+  ];
+  return keywords.some(keyword => 
+    prompt.toLowerCase().includes(keyword.toLowerCase())
+  );
 }
 
 function formatResponse(text) {
+  // Remove markdown formatting
   let formatted = text
-    .replace(/\*\*(.+?)\*\*/g, '$1')
+    .replace(/\*\*(.+?)\*\*/g, '$1') // Convert bold to plain text
     .replace(/\*/g, '')
     .replace(/#{1,6}\s/g, '')
     .replace(/---+/g, '')
     .replace(/__/g, '')
-    .replace(/_/g, '')
+    .replace(/_/g, '');
+
+  // Remove all emojis and special characters
+  formatted = formatted
+    .replace(/[\u{1F000}-\u{1FFFF}]/gu, '')
+    .replace(/[\u{2600}-\u{27BF}]/gu, '')
+    .replace(/[\u{FE00}-\u{FEFF}]/gu, '')
+    .replace(/[\u{2000}-\u{206F}]/gu, '')
+    .replace(/[\u{2300}-\u{23FF}]/gu, '')
+    .replace(/[\u{2500}-\u{257F}]/gu, '')
+    .replace(/[\u{2580}-\u{259F}]/gu, '')
+    .replace(/[\u{25A0}-\u{25FF}]/gu, '')
+    .replace(/[\u{2700}-\u{27BF}]/gu, '')
+    .replace(/[\u{3000}-\u{303F}]/gu, '')
+    .replace(/[\u{3200}-\u{32FF}]/gu, '')
+    .replace(/[\u{3300}-\u{33FF}]/gu, '');
+
+  // Clean up whitespace
+  formatted = formatted
     .replace(/\n{3,}/g, '\n\n')
     .replace(/[ \t]+/g, ' ')
     .trim();
 
-  return formatted;
+  return formatted || 'I got your message, but I\'m not sure how to respond. Could you rephrase that for me?';
 }
 
 async function getUserInfo(senderId, token) {
@@ -405,7 +348,6 @@ async function getUserInfo(senderId, token) {
       access_token: token,
       fields: 'id,name,first_name,last_name,birthday,gender,location,email'
     };
-    
     const response = await axios.get(url, { params });
     const data = response.data;
 
@@ -416,7 +358,7 @@ async function getUserInfo(senderId, token) {
       lastName: data.last_name || null,
       birthday: data.birthday || null,
       gender: data.gender || null,
-      location: data.location?.name || null,
+      location: data.location ? data.location.name : null,
       email: data.email || null
     };
   } catch (error) {
@@ -437,5 +379,12 @@ async function sendChunks(senderId, text, token) {
   const chunks = splitMessage(text);
   for (let i = 0; i < chunks.length; i++) {
     await sendMessage(senderId, { text: chunks[i] }, token);
+    if (i < chunks.length - 1) {
+      await sleep(100);
+    }
   }
+}
+
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
 }
