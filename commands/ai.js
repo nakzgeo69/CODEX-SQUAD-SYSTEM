@@ -1,9 +1,11 @@
 const axios = require('axios');
 const { sendMessage } = require('../handles/sendMessage');
 
-// Move API_URL to the top for clarity
 const API_URL = 'https://yin-api.vercel.app/ai/chatgptfree';
 const MAX_CHUNK = 1900;
+const MAX_HISTORY = 10;
+
+const conversationHistory = new Map();
 
 module.exports = {
   name: 'ai',
@@ -14,153 +16,217 @@ module.exports = {
   async execute(senderId, args, token) {
     const prompt = args.join(' ').trim();
 
-    // --- GREETING / HELP RESPONSE ---
-    // Return the "I'm Teacher Arlene" message for empty prompt, "help", or common greetings
-    const greetingKeywords = [
-      'hi', 'hello', 'hai', 'hey', 'greetings',
-      'good morning', 'good afternoon', 'good evening',
-      'hola', 'howdy', 'sup', 'yo'
-    ];
-
-    const isGreeting = !prompt ||
-                       prompt.toLowerCase() === 'help' ||
-                       greetingKeywords.some(word => prompt.toLowerCase() === word);
-
-    if (isGreeting) {
-      const helpResponse = 'Likewise! By the way I\'m Teacher Arlene! Created by GeoDevz69. How can I assist you today?';
-      await sendMessage(senderId, { text: helpResponse }, token);
-      return;
-    }
-
-    // --- OWNER QUESTIONS ---
-    const ownerKeywords = [
-      'who is your owner', 'who is your owner?', 'who owns you', 'who owns you?',
-      'who created you', 'who created you?', 'who made you', 'who made you?',
-      'sino gumawa sayo', 'sino gumawa sa iyo', 'sino gumawa', 'sino ang gumawa',
-      'sino may ari sayo', 'sino may ari sa iyo', 'sino owner mo', 'sino owner',
-      'owner mo', 'owner', 'creater', 'creator'
-    ];
-
-    const isOwnerQuestion = ownerKeywords.some(keyword =>
-      prompt.toLowerCase().includes(keyword.toLowerCase())
-    );
-
-    if (isOwnerQuestion) {
-      const ownerResponse = 'Wow! Nice question, well my boss GeoDevz69 created me, you can contact him with this link below.\n\nhttps://www.facebook.com/geotechph.net';
-      await sendMessage(senderId, { text: ownerResponse }, token);
-      return;
-    }
-
-    // --- USER INFO QUESTIONS (name, birthday, etc.) ---
-    const userInfoKeywords = [
-      'what is my name', 'ano pangalan ko', 'my name', 'pangalan ko',
-      'whats my name', 'what\'s my name',
-      'when is my birthday', 'kelan birthday ko', 'my birthday', 'birthday ko',
-      'who am i', 'sino ako'
-    ];
-
-    const isUserInfoQuestion = userInfoKeywords.some(keyword =>
-      prompt.toLowerCase().includes(keyword.toLowerCase())
-    );
-
-    if (isUserInfoQuestion) {
-      try {
-        const userInfo = await getUserInfo(senderId, token);
-
-        let response = '';
-
-        if (prompt.toLowerCase().includes('name') || prompt.toLowerCase().includes('pangalan')) {
-          if (userInfo.name) {
-            response = `Your name is ${userInfo.name}.`;
-          } else {
-            response = 'I can\'t tell you about that because it\'s confidential.';
-          }
-        }
-
-        if (prompt.toLowerCase().includes('birthday') || prompt.toLowerCase().includes('birth') || prompt.toLowerCase().includes('kelan')) {
-          if (userInfo.birthday) {
-            response += `\nYour birthday is ${userInfo.birthday}.`;
-          } else {
-            response += '\nI can\'t tell you about that because it\'s confidential.';
-          }
-        }
-
-        if (!response) {
-          const publicInfo = [];
-          if (userInfo.name) publicInfo.push(`Name: ${userInfo.name}`);
-          if (userInfo.birthday) publicInfo.push(`Birthday: ${userInfo.birthday}`);
-          if (userInfo.gender) publicInfo.push(`Gender: ${userInfo.gender}`);
-          if (userInfo.location) publicInfo.push(`Location: ${userInfo.location}`);
-
-          if (publicInfo.length > 0) {
-            response = `Here is your public information:\n${publicInfo.join('\n')}`;
-          } else {
-            response = 'I can\'t tell you about that because it\'s confidential.';
-          }
-        }
-
-        await sendMessage(senderId, { text: response }, token);
-        return;
-
-      } catch (error) {
-        console.error(`[User Info] Failed: ${error.message}`);
-        await sendMessage(senderId, {
-          text: 'Please try again after 15.0s.'
-        }, token);
-        return;
-      }
-    }
-
-    // --- GENERAL AI QUERY (using API) ---
-    try {
-      const { data } = await axios.get(API_URL, {
-        params: {
-          prompt: prompt,
-          model: 'chatgpt4'
-        },
-        timeout: 15000
-      });
-
-      if (!data?.answer) {
-        throw new Error('Invalid API response');
-      }
-
-      let aiResponse = data.answer.trim();
-
-      // Formatting: convert **bold** to *bold* (Messenger style)
-      aiResponse = aiResponse.replace(/\*\*(.+?)\*\*/g, '*$1*');
-      aiResponse = aiResponse.replace(/\*/g, '');
-      aiResponse = aiResponse.replace(/#{1,6}\s/g, '');
-      aiResponse = aiResponse.replace(/---+/g, '');
-      aiResponse = aiResponse.replace(/__/g, '');
-      aiResponse = aiResponse.replace(/_/g, '');
-
-      // Remove emojis
-      aiResponse = aiResponse.replace(/[\u{1F000}-\u{1FFFF}]/gu, '');
-      aiResponse = aiResponse.replace(/[\u{2600}-\u{27BF}]/gu, '');
-      aiResponse = aiResponse.replace(/[\u{FE00}-\u{FEFF}]/gu, '');
-
-      // Clean up extra whitespace
-      aiResponse = aiResponse.replace(/\n{3,}/g, '\n\n');
-      aiResponse = aiResponse.replace(/[ \t]+/g, ' ');
-      aiResponse = aiResponse.trim();
-
-      await sendChunks(senderId, aiResponse, token);
-
-    } catch (error) {
-      const reason = error.response
-        ? `API error ${error.response.status}`
-        : error.message ?? 'Unknown error';
-
-      console.error(`[ai] Failed for sender ${senderId}: ${reason}`);
-      await sendMessage(senderId, {
-        text: 'Server error. Please try again later.'
+    if (!prompt) {
+      await sendMessage(senderId, { 
+        text: 'Hello! I\'m Teacher Arlene. How can I help you today?' 
       }, token);
+      return;
     }
+
+    if (await handleCommands(senderId, prompt, token)) {
+      return;
+    }
+
+    await processAIQuery(senderId, prompt, token);
   }
 };
 
-// --- HELPER FUNCTIONS ---
+async function handleCommands(senderId, prompt, token) {
+  const lowerPrompt = prompt.toLowerCase();
+
+  if (lowerPrompt === 'help') {
+    await sendMessage(senderId, { 
+      text: 'Available commands:\n- help: Show this menu\n- clear: Clear conversation history\n- hi/hello: Start fresh conversation\n\nJust type your question and I\'ll help you!' 
+    }, token);
+    return true;
+  }
+
+  if (lowerPrompt === 'clear' || lowerPrompt === 'reset') {
+    conversationHistory.delete(senderId);
+    await sendMessage(senderId, { 
+      text: 'Conversation history cleared. Starting fresh!' 
+    }, token);
+    return true;
+  }
+
+  const greetings = ['hi', 'hello', 'hey', 'halo', 'musta', 'kamusta', 'good morning', 'good afternoon', 'good evening'];
+  if (greetings.some(g => lowerPrompt === g)) {
+    conversationHistory.delete(senderId);
+    await sendMessage(senderId, { 
+      text: 'Hello! I\'m Teacher Arlene. What would you like to discuss today?' 
+    }, token);
+    return true;
+  }
+
+  const ownerKeywords = [
+    'who is your owner', 'who owns you', 'who created you', 'who made you',
+    'sino gumawa sayo', 'sino may ari sayo', 'owner mo', 'creator mo'
+  ];
+  
+  if (ownerKeywords.some(keyword => lowerPrompt.includes(keyword))) {
+    await sendMessage(senderId, { 
+      text: 'My creator is GeoDevz69. You can contact him at: https://www.facebook.com/geotechph.net' 
+    }, token);
+    return true;
+  }
+
+  const userInfoKeywords = [
+    'my name', 'pangalan ko', 'what is my name', 'who am i', 'sino ako',
+    'my birthday', 'birthday ko', 'when is my birthday', 'kelan birthday ko'
+  ];
+  
+  if (userInfoKeywords.some(keyword => lowerPrompt.includes(keyword))) {
+    await handleUserInfo(senderId, prompt, token);
+    return true;
+  }
+
+  return false;
+}
+
+async function handleUserInfo(senderId, prompt, token) {
+  try {
+    const userInfo = await getUserInfo(senderId, token);
+    let response = '';
+
+    const lowerPrompt = prompt.toLowerCase();
+
+    if (lowerPrompt.includes('name') || lowerPrompt.includes('pangalan')) {
+      response = userInfo.name 
+        ? `Your name is ${userInfo.name}.` 
+        : 'I cannot access your name due to privacy settings.';
+    }
+
+    if (lowerPrompt.includes('birthday') || lowerPrompt.includes('birth') || lowerPrompt.includes('kelan')) {
+      response += userInfo.birthday 
+        ? `\nYour birthday is ${userInfo.birthday}.` 
+        : '\nI cannot access your birthday.';
+    }
+
+    if (!response) {
+      const details = [];
+      if (userInfo.name) details.push(`Name: ${userInfo.name}`);
+      if (userInfo.birthday) details.push(`Birthday: ${userInfo.birthday}`);
+      if (userInfo.gender) details.push(`Gender: ${userInfo.gender}`);
+      if (userInfo.location) details.push(`Location: ${userInfo.location}`);
+
+      response = details.length > 0 
+        ? `Information I have about you:\n${details.join('\n')}` 
+        : 'I don\'t have much information about you.';
+    }
+
+    await sendMessage(senderId, { text: response }, token);
+  } catch (error) {
+    console.error(`[User Info] Error: ${error.message}`);
+    await sendMessage(senderId, {
+      text: 'Unable to retrieve your information. Please try again later.'
+    }, token);
+  }
+}
+
+async function processAIQuery(senderId, prompt, token) {
+  try {
+    if (!conversationHistory.has(senderId)) {
+      conversationHistory.set(senderId, []);
+    }
+    
+    const history = conversationHistory.get(senderId);
+    
+    history.push({
+      role: 'user',
+      content: prompt,
+      timestamp: Date.now()
+    });
+
+    if (history.length > MAX_HISTORY) {
+      history.splice(0, history.length - MAX_HISTORY);
+    }
+
+    const contextualPrompt = buildContextualPrompt(history, prompt);
+
+    const { data } = await axios.get(API_URL, {
+      params: {
+        prompt: contextualPrompt,
+        model: 'chatgpt4'
+      },
+      timeout: 15000
+    });
+
+    if (!data?.answer) {
+      throw new Error('Invalid API response');
+    }
+
+    let aiResponse = formatResponse(data.answer.trim());
+
+    history.push({
+      role: 'assistant',
+      content: aiResponse,
+      timestamp: Date.now()
+    });
+
+    conversationHistory.set(senderId, history);
+    await sendChunks(senderId, aiResponse, token);
+
+  } catch (error) {
+    console.error(`[AI] Error for ${senderId}: ${error.message}`);
+    
+    const errorMsg = error.response?.status === 429 
+      ? 'Too many requests. Please wait a moment and try again.'
+      : 'An error occurred. Please try again later.';
+    
+    await sendMessage(senderId, { text: errorMsg }, token);
+  }
+}
+
+function buildContextualPrompt(history, currentPrompt) {
+  let prompt = '';
+
+  prompt += `You are Teacher Arlene, a conversational AI assistant. 
+Respond in a warm and helpful manner. Use emojis moderately.
+Ask questions to keep the conversation engaging.
+Connect your responses to previous topics when relevant.
+
+`;
+
+  const recentHistory = history.slice(-6);
+  if (recentHistory.length > 1) {
+    prompt += 'Previous conversation:\n';
+    recentHistory.forEach(msg => {
+      if (msg.role === 'user') {
+        prompt += `User: ${msg.content}\n`;
+      } else if (msg.role === 'assistant') {
+        prompt += `Teacher Arlene: ${msg.content}\n`;
+      }
+    });
+    prompt += '\n';
+  }
+
+  prompt += `Current question: ${currentPrompt}
+
+Instructions:
+1. Use previous conversation for context
+2. Provide relevant and helpful responses
+3. Keep the tone conversational
+4. Ask a follow-up question to continue the dialogue
+
+Response:`;
+
+  return prompt;
+}
+
+function formatResponse(text) {
+  let formatted = text
+    .replace(/\*\*(.+?)\*\*/g, '$1')
+    .replace(/\*/g, '')
+    .replace(/#{1,6}\s/g, '')
+    .replace(/---+/g, '')
+    .replace(/__/g, '')
+    .replace(/_/g, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .replace(/[ \t]+/g, ' ')
+    .trim();
+
+  return formatted;
+}
 
 async function getUserInfo(senderId, token) {
   try {
@@ -169,6 +235,7 @@ async function getUserInfo(senderId, token) {
       access_token: token,
       fields: 'id,name,first_name,last_name,birthday,gender,location,email'
     };
+    
     const response = await axios.get(url, { params });
     const data = response.data;
 
@@ -179,7 +246,7 @@ async function getUserInfo(senderId, token) {
       lastName: data.last_name || null,
       birthday: data.birthday || null,
       gender: data.gender || null,
-      location: data.location ? data.location.name : null,
+      location: data.location?.name || null,
       email: data.email || null
     };
   } catch (error) {
