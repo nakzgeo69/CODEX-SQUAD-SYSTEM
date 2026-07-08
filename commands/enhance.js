@@ -1,7 +1,6 @@
 const axios = require('axios');
 const { sendMessage } = require('../handles/sendMessage');
 
-// API endpoint for image enhancement
 const API_URL = 'https://betadash-api-swordslush-production.up.railway.app/upscale';
 
 module.exports = {
@@ -12,10 +11,8 @@ module.exports = {
 
   async execute(senderId, args, token, event) {
     try {
-      // Extract image URL from the event
       let imageUrl = await extractImageUrl(event, token);
 
-      // If no image found in event, check if user provided a URL in args
       if (!imageUrl && args.length > 0) {
         const urlMatch = args.join(' ').match(/(https?:\/\/[^\s]+\.(?:png|jpg|jpeg|gif|webp|bmp|svg))/i);
         if (urlMatch) {
@@ -32,7 +29,7 @@ module.exports = {
 
       console.log(`[enhance] Processing image: ${imageUrl}`);
 
-      // Notify user about processing
+      // Send processing message
       await sendMessage(senderId, { 
         text: '🔄| Enhancing image to 4K... Please wait a moment.' 
       }, token);
@@ -49,30 +46,33 @@ module.exports = {
 
       const data = response.data;
 
-      // Check if the response has the imageUrl field
       if (data?.imageUrl) {
-        // The enhanced image URL from Cloudinary
         const enhancedUrl = data.imageUrl;
         
         console.log(`[enhance] Enhanced image URL: ${enhancedUrl}`);
 
-        // Send the enhanced image
+        // ✅ FIXED: Send as SEPARATE messages
+        // 1. Success text
         await sendMessage(senderId, {
-          text: '✅| Here is your enhanced 4K image:',
+          text: '✅| Here is your enhanced 4K image:'
+        }, token);
+
+        // 2. Image attachment (SEND THIS BY ITSELF, NO TEXT)
+        await sendMessage(senderId, {
           attachment: {
             type: 'image',
             payload: { url: enhancedUrl }
           }
         }, token);
 
-        // Send author credit if available
+        // 3. Author credit
         if (data.author) {
           await sendMessage(senderId, {
             text: `👤| Enhanced by: ${data.author}`
           }, token);
         }
 
-        // Optional: Send the direct link too
+        // 4. Direct link
         await sendMessage(senderId, {
           text: `🔗| Direct link: ${enhancedUrl}`
         }, token);
@@ -114,15 +114,12 @@ module.exports = {
 
 async function extractImageUrl(event, token) {
   try {
-    // Check if replying to a message with image
     if (event?.message?.reply_to?.mid) {
       return await getRepliedImage(event.message.reply_to.mid, token);
     } 
-    // Check if direct image attachment
     else if (event?.message?.attachments?.[0]?.type === 'image') {
       return event.message.attachments[0].payload.url;
     }
-    // Check if image URL was provided in text
     else if (event?.message?.text) {
       const text = event.message.text;
       const urlMatch = text.match(/(https?:\/\/[^\s]+\.(?:png|jpg|jpeg|gif|webp|bmp|svg))/i);
