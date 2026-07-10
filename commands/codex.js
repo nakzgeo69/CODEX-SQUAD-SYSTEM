@@ -15,7 +15,7 @@ module.exports = {
     const prompt = args.join(' ').trim() || 'Hello';
 
     try {
-      const { data } = await axios.get(API_URL, {
+      const response = await axios.get(API_URL, {
         params: {
           prompt: prompt,
           user: '123'
@@ -23,11 +23,24 @@ module.exports = {
         timeout: 120000
       });
 
-      if (!data?.data) {
-        throw new Error('Invalid API response');
+      console.log('API Response Status:', response.status);
+      console.log('API Response Data:', JSON.stringify(response.data).substring(0, 200));
+
+      if (!response.data) {
+        throw new Error('No data received from API');
       }
 
-      let aiResponse = data.data.trim();
+      if (!response.data.data) {
+        console.error('Invalid response structure:', response.data);
+        throw new Error('Invalid API response structure');
+      }
+
+      let aiResponse = response.data.data.trim();
+
+      if (!aiResponse || aiResponse.length < 10) {
+        console.error('Empty or too short response:', aiResponse);
+        throw new Error('API returned empty response');
+      }
 
       aiResponse = aiResponse.replace(/\*\*(.+?)\*\*/g, '$1');
       aiResponse = aiResponse.replace(/\*/g, '');
@@ -44,6 +57,8 @@ module.exports = {
       aiResponse = aiResponse.replace(/[ \t]+/g, ' ');
       aiResponse = aiResponse.trim();
 
+      console.log('Processed response length:', aiResponse.length);
+
       if (aiResponse.length > MAX_CHUNK) {
         await sendLongMessage(senderId, aiResponse, token);
       } else {
@@ -51,13 +66,26 @@ module.exports = {
       }
 
     } catch (error) {
-      const reason = error.response
-        ? `API error ${error.response.status}`
-        : error.message ?? 'Unknown error';
+      console.error('[codex] Full error:', error);
+      console.error('[codex] Error message:', error.message);
+      console.error('[codex] Error stack:', error.stack);
 
-      console.error(`[codex] Failed for sender ${senderId}: ${reason}`);
+      let errorMessage = 'Server error. Please try again later.';
+
+      if (error.response) {
+        console.error('[codex] Response status:', error.response.status);
+        console.error('[codex] Response data:', error.response.data);
+        errorMessage = `API Error ${error.response.status}: ${error.response.data?.message || 'Unknown error'}`;
+      } else if (error.request) {
+        console.error('[codex] No response received');
+        errorMessage = 'No response from API server. Please try again.';
+      } else {
+        console.error('[codex] Request setup error:', error.message);
+        errorMessage = `Request error: ${error.message}`;
+      }
+
       await sendMessage(senderId, {
-        text: 'Server error. Please try again later.'
+        text: errorMessage
       }, token);
     }
   }
@@ -67,13 +95,8 @@ function splitIntoChunks(text) {
   const chunks = [];
   const lines = text.split('\n');
   let currentChunk = '';
-  let isInCodeBlock = false;
 
   for (const line of lines) {
-    if (line.trim().startsWith('```') || line.trim().endsWith('```')) {
-      isInCodeBlock = !isInCodeBlock;
-    }
-
     const lineWithNewline = line + '\n';
     
     if ((currentChunk + lineWithNewline).length > MAX_CHUNK) {
