@@ -28,15 +28,15 @@ module.exports = {
 
       let aiResponse = data.data.trim();
 
-      // Remove markdown symbols
-      aiResponse = aiResponse.replace(/\*\*(.+?)\*\*/g, '$1');
+      // Convert **text** to Messenger bold format (*text*)
+      aiResponse = aiResponse.replace(/\*\*(.+?)\*\*/g, '*$1*');
+      
+      // Remove other markdown symbols but keep bold
       aiResponse = aiResponse.replace(/\*/g, '');
       aiResponse = aiResponse.replace(/#{1,6}\s/g, '');
       aiResponse = aiResponse.replace(/---+/g, '');
       aiResponse = aiResponse.replace(/__/g, '');
       aiResponse = aiResponse.replace(/_/g, '');
-      aiResponse = aiResponse.replace(/```/g, '');
-      aiResponse = aiResponse.replace(/""/g, '');
       
       // Remove emojis
       aiResponse = aiResponse.replace(/[\u{1F000}-\u{1FFFF}]/gu, '');
@@ -48,7 +48,13 @@ module.exports = {
       aiResponse = aiResponse.replace(/[ \t]+/g, ' ');
       aiResponse = aiResponse.trim();
 
-      // Send chunks without indicators
+      // Add header for code requests
+      const isCodeRequest = /<|>|\{|\}|function|class|const|let|var|<\?php|<!DOCTYPE|import|export|def|async|await|=>|#include|public class|System.out|SELECT|INSERT|UPDATE|DELETE|package|func|fn|interface|type|\.css|\.jsx|\.tsx/.test(prompt);
+      if (isCodeRequest) {
+        aiResponse = '' + aiResponse;
+      }
+
+      // Send full response in chunks with proper handling
       await sendChunks(senderId, aiResponse, token);
 
     } catch (error) {
@@ -66,15 +72,18 @@ module.exports = {
 
 function splitMessage(text) {
   const chunks = [];
+  // Ensure we don't cut code blocks in half
   const lines = text.split('\n');
   let currentChunk = '';
   
   for (const line of lines) {
+    // If adding this line would exceed MAX_CHUNK, push current chunk and start new one
     if ((currentChunk + line + '\n').length > MAX_CHUNK) {
       if (currentChunk) {
         chunks.push(currentChunk.trim());
         currentChunk = '';
       }
+      // If a single line exceeds MAX_CHUNK, split it
       if (line.length > MAX_CHUNK) {
         for (let i = 0; i < line.length; i += MAX_CHUNK) {
           chunks.push(line.slice(i, i + MAX_CHUNK));
@@ -87,6 +96,7 @@ function splitMessage(text) {
     }
   }
   
+  // Push the last chunk if it exists
   if (currentChunk) {
     chunks.push(currentChunk.trim());
   }
@@ -97,11 +107,26 @@ function splitMessage(text) {
 async function sendChunks(senderId, text, token) {
   const chunks = splitMessage(text);
   
+  // If only one chunk, send it directly
+  if (chunks.length === 1) {
+    await sendMessage(senderId, { text: chunks[0] }, token);
+    return;
+  }
+  
+  // Send multiple chunks with part indicators
   for (let i = 0; i < chunks.length; i++) {
-    await sendMessage(senderId, { text: chunks[i] }, token);
+    let chunkText = chunks[i];
     
+    // Add part indicator for multi-chunk responses
+    if (chunks.length > 1) {
+      chunkText = `[Part ${i+1}/${chunks.length}]\n${chunkText}`;
+    }
+    
+    await sendMessage(senderId, { text: chunkText }, token);
+    
+    // Add delay between chunks to avoid rate limiting
     if (i < chunks.length - 1) {
-      await new Promise(resolve => setTimeout(resolve, 800));
+      await new Promise(resolve => setTimeout(resolve, 1000));
     }
   }
 }
