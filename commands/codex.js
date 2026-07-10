@@ -71,13 +71,23 @@ function detectLanguage(code, prompt) {
     java: /public\s+class|private\s+[a-zA-Z]|System\.out|@Override|import\s+java\.|void\s+main/,
     cpp: /#include\s*<|#include\s*"|std::|using\s+namespace|class\s+[A-Z]|public:|private:|protected:|cout|cin/,
     csharp: /using\s+System|namespace\s+[A-Z]|class\s+[A-Z]|public\s+[a-zA-Z]|private\s+[a-zA-Z]|void\s+Main/,
-    ruby: /def\s+[a-zA-Z]|class\s+[A-Z]|end\s*$|require\s+['"]|puts\s+|attr_accessor/,
+    ruby: /def\s+[a-zA-Z]|class\s+[A-Z]|end\s*$|require\s+["']|puts\s+|attr_accessor/,
     go: /func\s+[a-zA-Z]|package\s+[a-zA-Z]|import\s+\(|type\s+[A-Z]|struct\s*\{|interface\s*\{/,
     rust: /fn\s+[a-zA-Z]|let\s+mut|let\s+[a-zA-Z]|impl\s+[A-Z]|pub\s+fn|use\s+[a-zA-Z]|println!/,
     swift: /func\s+[a-zA-Z]|class\s+[A-Z]|struct\s+[A-Z]|import\s+[A-Z]|let\s+[a-zA-Z]|var\s+[a-zA-Z]/,
     kotlin: /fun\s+[a-zA-Z]|class\s+[A-Z]|data\s+class|var\s+[a-zA-Z]|val\s+[a-zA-Z]|println\(/,
     typescript: /:\s*[a-zA-Z]+\s*=|interface\s+[A-Z]|type\s+[A-Z]|export\s+interface|export\s+type|as\s+[A-Z]/,
-    shell: /^#!/|echo\s+["']|grep\s+|awk\s+|sed\s+|chmod|chown|mkdir|rm\s+-rf|sudo\s+|apt-get/
+    shell: /^#!/,
+    shell2: /echo\s+["']/,
+    shell3: /grep\s+/,
+    shell4: /awk\s+/,
+    shell5: /sed\s+/,
+    shell6: /chmod/,
+    shell7: /chown/,
+    shell8: /mkdir/,
+    shell9: /rm\s+-rf/,
+    shell10: /sudo\s+/,
+    shell11: /apt-get/
   };
 
   const promptLower = prompt.toLowerCase();
