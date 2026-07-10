@@ -28,10 +28,8 @@ module.exports = {
 
       let aiResponse = data.data.trim();
 
-      // Convert **text** to Messenger bold format (*text*)
-      aiResponse = aiResponse.replace(/\*\*(.+?)\*\*/g, '*$1*');
-      
-      // Remove other markdown symbols but keep bold
+      // Remove all markdown symbols
+      aiResponse = aiResponse.replace(/\*\*(.+?)\*\*/g, '$1');
       aiResponse = aiResponse.replace(/\*/g, '');
       aiResponse = aiResponse.replace(/#{1,6}\s/g, '');
       aiResponse = aiResponse.replace(/---+/g, '');
@@ -43,16 +41,27 @@ module.exports = {
       aiResponse = aiResponse.replace(/[\u{2600}-\u{27BF}]/gu, '');
       aiResponse = aiResponse.replace(/[\u{FE00}-\u{FEFF}]/gu, '');
       
+      // Remove extra text and comments
+      aiResponse = aiResponse.replace(/^Sure,.*?example:/s, '');
+      aiResponse = aiResponse.replace(/^Here's.*?example:/s, '');
+      aiResponse = aiResponse.replace(/^I can provide.*?example:/s, '');
+      aiResponse = aiResponse.replace(/^Let me.*?example:/s, '');
+      aiResponse = aiResponse.replace(/```/g, '');
+      aiResponse = aiResponse.replace(/""/g, '');
+      
+      // Remove explanatory text before code
+      const codeMatch = aiResponse.match(/(<\?php|<!DOCTYPE|<html|function|class|const|let|var|import|export|def|async)/);
+      if (codeMatch) {
+        const startIndex = aiResponse.indexOf(codeMatch[0]);
+        if (startIndex > 0) {
+          aiResponse = aiResponse.substring(startIndex);
+        }
+      }
+      
       // Clean up extra spaces and newlines
       aiResponse = aiResponse.replace(/\n{3,}/g, '\n\n');
       aiResponse = aiResponse.replace(/[ \t]+/g, ' ');
       aiResponse = aiResponse.trim();
-
-      // Add header for code requests
-      const isCodeRequest = /<|>|\{|\}|function|class|const|let|var|<\?php|<!DOCTYPE|import|export|def|async|await|=>|#include|public class|System.out|SELECT|INSERT|UPDATE|DELETE|package|func|fn|interface|type|\.css|\.jsx|\.tsx/.test(prompt);
-      if (isCodeRequest) {
-        aiResponse = '' + aiResponse;
-      }
 
       // Send chunks without part indicators
       await sendChunks(senderId, aiResponse, token);
@@ -64,7 +73,7 @@ module.exports = {
 
       console.error(`[codex] Failed for sender ${senderId}: ${reason}`);
       await sendMessage(senderId, {
-        text: 'Server error. Please try again after 15.0s.'
+        text: 'Server error. Please try again later.'
       }, token);
     }
   }
@@ -106,7 +115,6 @@ async function sendChunks(senderId, text, token) {
   for (let i = 0; i < chunks.length; i++) {
     await sendMessage(senderId, { text: chunks[i] }, token);
     
-    // Add delay between chunks para iwas rate limit
     if (i < chunks.length - 1) {
       await new Promise(resolve => setTimeout(resolve, 800));
     }
