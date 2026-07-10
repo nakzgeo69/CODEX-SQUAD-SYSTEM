@@ -1,7 +1,7 @@
 const axios = require('axios');
 const { sendMessage } = require('../handles/sendMessage');
 
-const API_URL = 'https://yin-api.vercel.app/ai/chatgptfree';
+const API_URL = 'https://api-library-kohi-production.up.railway.app/api/publicai';
 const MAX_CHUNK = 1900;
 const MAX_PROMPT_LENGTH = 10000;
 
@@ -15,8 +15,8 @@ module.exports = {
     let prompt = args.join(' ').trim();
 
     if (!prompt) {
-      await sendMessage(senderId, { 
-        text: 'Usage: codex [your code or question]' 
+      await sendMessage(senderId, {
+        text: 'Usage: codex [your code or question]'
       }, token);
       return;
     }
@@ -29,16 +29,16 @@ module.exports = {
     const isCodeRequest = /<|>|\{|\}|function|class|const|let|var|<\?php|<!DOCTYPE|import|export|def|async|await|=>|#include|public class|System.out|SELECT|INSERT|UPDATE|DELETE|package|func|fn|interface|type|\.css|\.jsx|\.tsx/.test(prompt);
 
     if (lowerPrompt === 'codex' || lowerPrompt === 'help') {
-      await sendMessage(senderId, { 
-        text: 'CODE-X Assistant\nCreated by GeoDevz69\n\nSupported Languages:\nHTML, CSS, JS, PHP, Python, Java, C++, C#, Ruby, SQL, Go, Rust, TypeScript, JSON, XML\n\nFeatures:\n- Code debugging\n- Code optimization\n- Code explanation\n- Syntax checking\n- Best practices\n\nExample: codex fix this function [paste code]' 
+      await sendMessage(senderId, {
+        text: 'CODE-X Assistant\nCreated by GeoDevz69\n\nSupported Languages:\nHTML, CSS, JS, PHP, Python, Java, C++, C#, Ruby, SQL, Go, Rust, TypeScript, JSON, XML\n\nFeatures:\n- Code debugging\n- Code optimization\n- Code explanation\n- Syntax checking\n- Best practices\n\nExample: codex fix this function [paste code]'
       }, token);
       return;
     }
 
     const ownerKeywords = ['owner', 'creator', 'gumawa', 'may ari', 'created', 'made', 'who made you', 'sino gumawa'];
     if (ownerKeywords.some(k => lowerPrompt.includes(k))) {
-      await sendMessage(senderId, { 
-        text: 'My creator is GeoDevz69.\nFacebook: https://www.facebook.com/geotechph.net' 
+      await sendMessage(senderId, {
+        text: 'My creator is GeoDevz69.\nFacebook: https://www.facebook.com/geotechph.net'
       }, token);
       return;
     }
@@ -56,7 +56,7 @@ module.exports = {
           response.push(userInfo.birthday ? `Birthday: ${userInfo.birthday}` : 'Birthday: Confidential');
         }
         if (!response.length) {
-          response = ['Information:', 
+          response = ['Information:',
             userInfo.name ? `Name: ${userInfo.name}` : '',
             userInfo.birthday ? `Birthday: ${userInfo.birthday}` : '',
             userInfo.gender ? `Gender: ${userInfo.gender}` : '',
@@ -77,37 +77,40 @@ module.exports = {
       let success = false;
 
       try {
-        const response = await axios.post(API_URL, {
-          prompt: prompt,
-          model: 'chatgpt4'
-        }, {
-          headers: { 'Content-Type': 'application/json' },
+        const response = await axios.get(API_URL, {
+          params: {
+            prompt: prompt,
+            user: '123'
+          },
           timeout: 120000
         });
-        aiResponse = response.data?.answer || response.data?.response || response.data?.message || '';
+        aiResponse = response.data?.response || response.data?.answer || response.data?.message || '';
         if (aiResponse) success = true;
-      } catch (postError) {
+      } catch (getError) {
         try {
           const encodedPrompt = encodeURIComponent(prompt);
           const response = await axios.get(API_URL, {
-            params: { prompt: encodedPrompt, model: 'chatgpt4' },
+            params: {
+              prompt: encodedPrompt,
+              user: '123'
+            },
             timeout: 120000
           });
-          aiResponse = response.data?.answer || response.data?.response || response.data?.message || '';
+          aiResponse = response.data?.response || response.data?.answer || response.data?.message || '';
           if (aiResponse) success = true;
-        } catch (getError) {
+        } catch (retryError) {
           const chunks = splitPrompt(prompt, 2000);
           let combined = '';
           for (let i = 0; i < chunks.length; i++) {
             try {
-              const chunkResponse = await axios.post(API_URL, {
-                prompt: `Part ${i+1}/${chunks.length}: ${chunks[i]}`,
-                model: 'chatgpt4'
-              }, {
-                headers: { 'Content-Type': 'application/json' },
+              const chunkResponse = await axios.get(API_URL, {
+                params: {
+                  prompt: `Part ${i+1}/${chunks.length}: ${chunks[i]}`,
+                  user: '123'
+                },
                 timeout: 60000
               });
-              const chunkText = chunkResponse.data?.answer || chunkResponse.data?.response || chunkResponse.data?.message || '';
+              const chunkText = chunkResponse.data?.response || chunkResponse.data?.answer || chunkResponse.data?.message || '';
               combined += chunkText + '\n';
             } catch (chunkError) {
               console.error(`[Chunk ${i+1}] ${chunkError.message}`);
