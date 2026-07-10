@@ -28,68 +28,6 @@ module.exports = {
 
       let aiResponse = data.data.trim();
 
-      // Remove all explanatory text before code
-      const lines = aiResponse.split('\n');
-      let codeStart = -1;
-      let foundCode = false;
-      
-      // Find first line that looks like code
-      const codePatterns = [
-        /^<\?php/,
-        /^<!DOCTYPE/,
-        /^<html/,
-        /^function /,
-        /^class /,
-        /^const /,
-        /^let /,
-        /^var /,
-        /^import /,
-        /^export /,
-        /^def /,
-        /^async /,
-        /^#include/,
-        /^public class/,
-        /^SELECT /,
-        /^package /,
-        /^func /,
-        /^fn /,
-        /^interface /,
-        /^type /,
-        /^using /,
-        /^namespace /,
-        /^#!\/usr\/bin/,
-        /^#!/,
-        /^# -*- coding:/,
-        /^from /,
-        /^require\(/,
-        /^const {/,
-        /^export default/
-      ];
-
-      for (let i = 0; i < lines.length; i++) {
-        const line = lines[i].trim();
-        if (line.length === 0) continue;
-        
-        for (const pattern of codePatterns) {
-          if (pattern.test(line)) {
-            codeStart = i;
-            foundCode = true;
-            break;
-          }
-        }
-        if (foundCode) break;
-      }
-
-      // If code found, extract from that point
-      if (foundCode && codeStart !== -1) {
-        aiResponse = lines.slice(codeStart).join('\n');
-      }
-
-      // Remove markdown code blocks if present
-      aiResponse = aiResponse.replace(/```(\w+)?\n/g, '');
-      aiResponse = aiResponse.replace(/```/g, '');
-      aiResponse = aiResponse.replace(/""/g, '');
-      
       // Remove markdown symbols
       aiResponse = aiResponse.replace(/\*\*(.+?)\*\*/g, '$1');
       aiResponse = aiResponse.replace(/\*/g, '');
@@ -97,6 +35,8 @@ module.exports = {
       aiResponse = aiResponse.replace(/---+/g, '');
       aiResponse = aiResponse.replace(/__/g, '');
       aiResponse = aiResponse.replace(/_/g, '');
+      aiResponse = aiResponse.replace(/```/g, '');
+      aiResponse = aiResponse.replace(/""/g, '');
       
       // Remove emojis
       aiResponse = aiResponse.replace(/[\u{1F000}-\u{1FFFF}]/gu, '');
@@ -108,11 +48,7 @@ module.exports = {
       aiResponse = aiResponse.replace(/[ \t]+/g, ' ');
       aiResponse = aiResponse.trim();
 
-      // If response is empty, send error
-      if (!aiResponse) {
-        throw new Error('No code found in response');
-      }
-
+      // Send chunks without indicators
       await sendChunks(senderId, aiResponse, token);
 
     } catch (error) {
@@ -122,7 +58,7 @@ module.exports = {
 
       console.error(`[codex] Failed for sender ${senderId}: ${reason}`);
       await sendMessage(senderId, {
-        text: 'Unable to generate code. Please try again with a clearer request.'
+        text: 'Server error. Please try again later.'
       }, token);
     }
   }
