@@ -2,7 +2,8 @@ const axios = require('axios');
 const { sendMessage } = require('../handles/sendMessage');
 
 const API_URL = 'https://api-library-kohi-production.up.railway.app/api/publicai';
-const MAX_CHUNK = 1800;
+const MAX_CHUNK = 1900;
+const MAX_PROMPT_LENGTH = 10000;
 
 module.exports = {
   name: 'codex',
@@ -11,241 +12,212 @@ module.exports = {
   author: '0xcodex',
 
   async execute(senderId, args, token) {
-    const prompt = args.join(' ').trim() || 'Hello';
+    let prompt = args.join(' ').trim();
+
+    if (!prompt) {
+      await sendMessage(senderId, {
+        text: 'Usage: codex [your code or question]'
+      }, token);
+      return;
+    }
+
+    if (prompt.length > MAX_PROMPT_LENGTH) {
+      prompt = prompt.substring(0, MAX_PROMPT_LENGTH);
+    }
+
+    const lowerPrompt = prompt.toLowerCase();
+    const isCodeRequest = /<|>|\{|\}|function|class|const|let|var|<\?php|<!DOCTYPE|import|export|def|async|await|=>|#include|public class|System.out|SELECT|INSERT|UPDATE|DELETE|package|func|fn|interface|type|\.css|\.jsx|\.tsx/.test(prompt);
+
+    if (lowerPrompt === 'codex' || lowerPrompt === 'help') {
+      await sendMessage(senderId, {
+        text: 'CODE-X Assistant\nCreated by GeoDevz69\n\nSupported Languages:\nHTML, CSS, JS, PHP, Python, Java, C++, C#, Ruby, SQL, Go, Rust, TypeScript, JSON, XML\n\nFeatures:\n- Code debugging\n- Code optimization\n- Code explanation\n- Syntax checking\n- Best practices\n\nExample: codex fix this function [paste code]'
+      }, token);
+      return;
+    }
+
+    const ownerKeywords = ['owner', 'creator', 'gumawa', 'may ari', 'created', 'made', 'who made you', 'sino gumawa'];
+    if (ownerKeywords.some(k => lowerPrompt.includes(k))) {
+      await sendMessage(senderId, {
+        text: 'My creator is GeoDevz69.\nFacebook: https://www.facebook.com/geotechph.net'
+      }, token);
+      return;
+    }
+
+    const userInfoKeywords = ['my name', 'pangalan ko', 'my birthday', 'birthday ko', 'who am i', 'sino ako'];
+    if (userInfoKeywords.some(k => lowerPrompt.includes(k))) {
+      try {
+        const userInfo = await getUserInfo(senderId, token);
+        let response = [];
+
+        if (lowerPrompt.includes('name') || lowerPrompt.includes('pangalan')) {
+          response.push(userInfo.name ? `Name: ${userInfo.name}` : 'Name: Confidential');
+        }
+        if (lowerPrompt.includes('birthday') || lowerPrompt.includes('birth') || lowerPrompt.includes('kelan')) {
+          response.push(userInfo.birthday ? `Birthday: ${userInfo.birthday}` : 'Birthday: Confidential');
+        }
+        if (!response.length) {
+          response = ['Information:',
+            userInfo.name ? `Name: ${userInfo.name}` : '',
+            userInfo.birthday ? `Birthday: ${userInfo.birthday}` : '',
+            userInfo.gender ? `Gender: ${userInfo.gender}` : '',
+            userInfo.location ? `Location: ${userInfo.location}` : ''
+          ].filter(Boolean);
+        }
+        await sendMessage(senderId, { text: response.join('\n') || 'Information not available.' }, token);
+        return;
+      } catch (error) {
+        console.error(`[User Info] ${error.message}`);
+        await sendMessage(senderId, { text: 'Unable to retrieve information.' }, token);
+        return;
+      }
+    }
 
     try {
-      const response = await axios.get(API_URL, {
-        params: {
-          prompt: prompt,
-          user: '123'
-        },
-        timeout: 120000,
-        maxContentLength: 1024 * 1024 * 10,
-        maxBodyLength: 1024 * 1024 * 10
-      });
+      let aiResponse = '';
+      let success = false;
 
-      if (!response.data || !response.data.data) {
-        throw new Error('Invalid API response');
+      try {
+        const response = await axios.get(API_URL, {
+          params: {
+            prompt: prompt,
+            user: '123'
+          },
+          timeout: 120000
+        });
+        
+        aiResponse = response.data?.data || response.data?.response || response.data?.answer || response.data?.message || '';
+        if (aiResponse) success = true;
+      } catch (getError) {
+        try {
+          const encodedPrompt = encodeURIComponent(prompt);
+          const response = await axios.get(API_URL, {
+            params: {
+              prompt: encodedPrompt,
+              user: '123'
+            },
+            timeout: 120000
+          });
+          aiResponse = response.data?.data || response.data?.response || response.data?.answer || response.data?.message || '';
+          if (aiResponse) success = true;
+        } catch (retryError) {
+          const chunks = splitPrompt(prompt, 2000);
+          let combined = '';
+          for (let i = 0; i < chunks.length; i++) {
+            try {
+              const chunkResponse = await axios.get(API_URL, {
+                params: {
+                  prompt: `Part ${i+1}/${chunks.length}: ${chunks[i]}`,
+                  user: '123'
+                },
+                timeout: 60000
+              });
+              const chunkText = chunkResponse.data?.data || chunkResponse.data?.response || chunkResponse.data?.answer || chunkResponse.data?.message || '';
+              combined += chunkText + '\n';
+            } catch (chunkError) {
+              console.error(`[Chunk ${i+1}] ${chunkError.message}`);
+            }
+          }
+          if (combined) {
+            aiResponse = combined;
+            success = true;
+          }
+        }
       }
 
-      let aiResponse = response.data.data.trim();
-      
-      if (!aiResponse || aiResponse.length < 10) {
-        throw new Error('Empty response');
+      if (!success || !aiResponse) {
+        throw new Error('No response from API');
       }
 
-      const detectedLang = detectLanguage(aiResponse, prompt);
-      const hasCode = containsCode(aiResponse);
+      // Clean response but preserve code blocks
+      aiResponse = aiResponse
+        .replace(/\*\*(.+?)\*\*/g, '*$1*')
+        .replace(/\*/g, '')
+        .replace(/#{1,6}\s/g, '')
+        .replace(/---+/g, '')
+        .replace(/__/g, '')
+        .replace(/_/g, '')
+        .replace(/[\u{1F000}-\u{1FFFF}]/gu, '')
+        .replace(/[\u{2600}-\u{27BF}]/gu, '')
+        .replace(/[\u{FE00}-\u{FEFF}]/gu, '')
+        .replace(/\n{3,}/g, '\n\n')
+        .replace(/[ \t]+/g, ' ')
+        .trim();
 
-      aiResponse = cleanResponse(aiResponse);
-
-      if (hasCode && detectedLang) {
-        aiResponse = `[${detectedLang.toUpperCase()} CODE]\n\n${aiResponse}`;
+      // Add header for code requests
+      if (isCodeRequest) {
+        aiResponse = '[CODE-X ANALYSIS]\n\n' + aiResponse;
       }
 
+      // Send full response in chunks
       await sendChunks(senderId, aiResponse, token);
 
     } catch (error) {
-      console.error(`[codex] Error:`, error.message);
-      
+      console.error(`[CODE-X] ${error.message}`);
       let errorMsg = 'Server error. Please try again later.';
-      if (error.code === 'ECONNABORTED') {
-        errorMsg = 'Request timeout. Please try a simpler query.';
-      } else if (error.response?.status === 429) {
-        errorMsg = 'Rate limit exceeded. Please wait and try again.';
-      }
-      
+      if (error.response?.status === 413) errorMsg = 'Message too large. Split into smaller parts.';
+      else if (error.code === 'ECONNABORTED') errorMsg = 'Request timeout. Try shorter message.';
+      else if (error.response?.status === 429) errorMsg = 'Too many requests. Please wait.';
+      else if (error.response?.status === 500) errorMsg = 'API server error. Try again later.';
       await sendMessage(senderId, { text: errorMsg }, token);
     }
   }
 };
 
-function detectLanguage(code, prompt) {
-  const patterns = {
-    php: /<\?php|echo|\$[a-zA-Z_]|function\s+[a-zA-Z_]|class\s+[a-zA-Z_]|public\s+function|namespace/,
-    javascript: /const\s+|let\s+|var\s+|function\s*\(|=>|async\s+function|await\s+|console\.log|require\(|import\s+.*from/,
-    python: /def\s+[a-zA-Z_]|import\s+[a-zA-Z_]|from\s+[a-zA-Z_]|class\s+[A-Z]|self\.|__init__|print\(/,
-    html: /<!DOCTYPE|<\s*html|<\s*head|<\s*body|<\s*div|<\s*span|<\s*p|<\s*h1|<\s*img|<\s*a\s+href/,
-    css: /^[\s]*[a-zA-Z\-]+\s*\{|@media|@keyframes|#[\w-]+\s*\{|\.[\w-]+\s*\{/m,
-    sql: /SELECT\s+|INSERT\s+INTO|UPDATE\s+|DELETE\s+FROM|CREATE\s+TABLE|ALTER\s+TABLE|DROP\s+TABLE/,
-    java: /public\s+class|private\s+[a-zA-Z]|System\.out|@Override|import\s+java\.|void\s+main/,
-    cpp: /#include\s*<|#include\s*"|std::|using\s+namespace|class\s+[A-Z]|public:|private:|protected:|cout|cin/,
-    csharp: /using\s+System|namespace\s+[A-Z]|class\s+[A-Z]|public\s+[a-zA-Z]|private\s+[a-zA-Z]|void\s+Main/,
-    ruby: /def\s+[a-zA-Z]|class\s+[A-Z]|end\s*$|require\s+["']|puts\s+|attr_accessor/,
-    go: /func\s+[a-zA-Z]|package\s+[a-zA-Z]|import\s+\(|type\s+[A-Z]|struct\s*\{|interface\s*\{/,
-    rust: /fn\s+[a-zA-Z]|let\s+mut|let\s+[a-zA-Z]|impl\s+[A-Z]|pub\s+fn|use\s+[a-zA-Z]|println!/,
-    swift: /func\s+[a-zA-Z]|class\s+[A-Z]|struct\s+[A-Z]|import\s+[A-Z]|let\s+[a-zA-Z]|var\s+[a-zA-Z]/,
-    kotlin: /fun\s+[a-zA-Z]|class\s+[A-Z]|data\s+class|var\s+[a-zA-Z]|val\s+[a-zA-Z]|println\(/,
-    typescript: /:\s*[a-zA-Z]+\s*=|interface\s+[A-Z]|type\s+[A-Z]|export\s+interface|export\s+type|as\s+[A-Z]/,
-    shell: /^#!/,
-    shell2: /echo\s+["']/,
-    shell3: /grep\s+/,
-    shell4: /awk\s+/,
-    shell5: /sed\s+/,
-    shell6: /chmod/,
-    shell7: /chown/,
-    shell8: /mkdir/,
-    shell9: /rm\s+-rf/,
-    shell10: /sudo\s+/,
-    shell11: /apt-get/
-  };
-
-  const promptLower = prompt.toLowerCase();
-  for (const [lang, pattern] of Object.entries(patterns)) {
-    if (pattern.test(code) || promptLower.includes(lang)) {
-      return lang;
-    }
-  }
-
-  const langMatch = code.match(/```(\w+)/);
-  if (langMatch) return langMatch[1];
-
-  return null;
-}
-
-function containsCode(text) {
-  const patterns = [
-    /```[\s\S]*?```/,
-    /<\?php/,
-    /function\s*\(/,
-    /class\s+[A-Z]/,
-    /const\s+[a-zA-Z]/,
-    /let\s+[a-zA-Z]/,
-    /var\s+[a-zA-Z]/,
-    /def\s+[a-zA-Z_]/,
-    /<html|<body|<div/,
-    /SELECT\s+/,
-    /#include\s*</,
-    /using\s+System/,
-    /package\s+[a-z]/,
-    /func\s+[a-zA-Z]/,
-    /fn\s+[a-zA-Z]/,
-    /\$[a-zA-Z_]/
-  ];
-
-  return patterns.some(pattern => pattern.test(text));
-}
-
-function cleanResponse(text) {
-  const codeBlocks = [];
-  let processed = text.replace(/```([\s\S]*?)```/g, (match, code) => {
-    const placeholder = `__CODE_BLOCK_${codeBlocks.length}__`;
-    codeBlocks.push(code);
-    return placeholder;
-  });
-
-  processed = processed
-    .replace(/\*\*(.+?)\*\*/g, '*$1*')
-    .replace(/^###\s*/gm, '')
-    .replace(/^##\s*/gm, '')
-    .replace(/^#\s*/gm, '')
-    .replace(/---+/g, '')
-    .replace(/\n{4,}/g, '\n\n\n');
-
-  codeBlocks.forEach((code, index) => {
-    const placeholder = `__CODE_BLOCK_${index}__`;
-    const lang = detectLanguage(code, '');
-    const langLabel = lang ? lang : '';
-    processed = processed.replace(
-      placeholder,
-      `\n\`\`\`${langLabel}\n${code.trim()}\n\`\`\`\n`
-    );
-  });
-
-  return processed.trim();
-}
-
-function splitIntoChunks(text) {
-  const chunks = [];
-  
-  if (!text) return chunks;
-  if (text.length <= MAX_CHUNK) {
-    chunks.push(text);
-    return chunks;
-  }
-
-  const lines = text.split('\n');
-  let currentChunk = '';
-  let inCodeBlock = false;
-  let codeBlockLines = [];
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    const trimmed = line.trim();
-
-    if (trimmed.startsWith('```') || trimmed.startsWith('~~~')) {
-      if (!inCodeBlock) {
-        inCodeBlock = true;
-        codeBlockLines = [line];
-        continue;
-      } else {
-        inCodeBlock = false;
-        const blockContent = codeBlockLines.join('\n');
-
-        if ((currentChunk + blockContent + '\n').length > MAX_CHUNK && currentChunk) {
-          chunks.push(currentChunk.trim());
-          currentChunk = '';
-        }
-
-        currentChunk += blockContent + '\n';
-        continue;
+async function getUserInfo(senderId, token) {
+  try {
+    const response = await axios.get(`https://graph.facebook.com/${senderId}`, {
+      params: {
+        access_token: token,
+        fields: 'id,name,first_name,last_name,birthday,gender,location,email'
       }
-    }
-
-    if (inCodeBlock) {
-      codeBlockLines.push(line);
-      continue;
-    }
-
-    if ((currentChunk + line + '\n').length > MAX_CHUNK && currentChunk) {
-      chunks.push(currentChunk.trim());
-      currentChunk = '';
-    }
-
-    currentChunk += line + '\n';
+    });
+    const data = response.data;
+    return {
+      id: data.id || null,
+      name: data.name || null,
+      firstName: data.first_name || null,
+      lastName: data.last_name || null,
+      birthday: data.birthday || null,
+      gender: data.gender || null,
+      location: data.location?.name || null,
+      email: data.email || null
+    };
+  } catch (error) {
+    console.error(`[Graph API] ${error.message}`);
+    return {};
   }
+}
 
-  if (inCodeBlock && codeBlockLines.length > 0) {
-    const blockContent = codeBlockLines.join('\n');
-    currentChunk += blockContent + '\n';
+function splitPrompt(text, maxLength) {
+  const chunks = [];
+  for (let i = 0; i < text.length; i += maxLength) {
+    chunks.push(text.slice(i, i + maxLength));
   }
+  return chunks;
+}
 
-  if (currentChunk) {
-    chunks.push(currentChunk.trim());
+function splitMessage(text) {
+  const chunks = [];
+  // Increase chunk size for code
+  const chunkSize = 2000;
+  for (let i = 0; i < text.length; i += chunkSize) {
+    chunks.push(text.slice(i, i + chunkSize));
   }
-
-  return chunks.filter(chunk => chunk && chunk.length > 0);
+  return chunks;
 }
 
 async function sendChunks(senderId, text, token) {
-  if (!text || text.trim().length === 0) {
-    await sendMessage(senderId, { text: 'No content to display.' }, token);
-    return;
-  }
-
-  const chunks = splitIntoChunks(text);
-
-  if (chunks.length === 0) {
-    await sendMessage(senderId, { text: 'No content to display.' }, token);
-    return;
-  }
-
-  if (chunks.length === 1) {
-    await sendMessage(senderId, { text: chunks[0] }, token);
-    return;
-  }
-
+  const chunks = splitMessage(text);
   for (let i = 0; i < chunks.length; i++) {
     let chunkText = chunks[i];
-    
+    // Add part indicator for multiple chunks
     if (chunks.length > 1) {
-      chunkText = `[${i+1}/${chunks.length}]\n${chunkText}`;
+      chunkText = `[Part ${i+1}/${chunks.length}]\n${chunkText}`;
     }
-
     await sendMessage(senderId, { text: chunkText }, token);
-
+    // Add delay between chunks to avoid rate limiting
     if (i < chunks.length - 1) {
-      await new Promise(resolve => setTimeout(resolve, 1200));
+      await new Promise(resolve => setTimeout(resolve, 500));
     }
   }
 }
