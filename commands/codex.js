@@ -51,10 +51,10 @@ module.exports = {
       // Add header for code requests
       const isCodeRequest = /<|>|\{|\}|function|class|const|let|var|<\?php|<!DOCTYPE|import|export|def|async|await|=>|#include|public class|System.out|SELECT|INSERT|UPDATE|DELETE|package|func|fn|interface|type|\.css|\.jsx|\.tsx/.test(prompt);
       if (isCodeRequest) {
-        aiResponse = '[CODE-X ANALYSIS]\n\n' + aiResponse;
+        aiResponse = '' + aiResponse;
       }
 
-      // Send full response in chunks with proper handling
+      // Send chunks without part indicators
       await sendChunks(senderId, aiResponse, token);
 
     } catch (error) {
@@ -64,7 +64,7 @@ module.exports = {
 
       console.error(`[codex] Failed for sender ${senderId}: ${reason}`);
       await sendMessage(senderId, {
-        text: 'Server error. Please try again later.'
+        text: 'Server error. Please try again after 15.0s.'
       }, token);
     }
   }
@@ -72,18 +72,15 @@ module.exports = {
 
 function splitMessage(text) {
   const chunks = [];
-  // Ensure we don't cut code blocks in half
   const lines = text.split('\n');
   let currentChunk = '';
   
   for (const line of lines) {
-    // If adding this line would exceed MAX_CHUNK, push current chunk and start new one
     if ((currentChunk + line + '\n').length > MAX_CHUNK) {
       if (currentChunk) {
         chunks.push(currentChunk.trim());
         currentChunk = '';
       }
-      // If a single line exceeds MAX_CHUNK, split it
       if (line.length > MAX_CHUNK) {
         for (let i = 0; i < line.length; i += MAX_CHUNK) {
           chunks.push(line.slice(i, i + MAX_CHUNK));
@@ -96,7 +93,6 @@ function splitMessage(text) {
     }
   }
   
-  // Push the last chunk if it exists
   if (currentChunk) {
     chunks.push(currentChunk.trim());
   }
@@ -107,26 +103,12 @@ function splitMessage(text) {
 async function sendChunks(senderId, text, token) {
   const chunks = splitMessage(text);
   
-  // If only one chunk, send it directly
-  if (chunks.length === 1) {
-    await sendMessage(senderId, { text: chunks[0] }, token);
-    return;
-  }
-  
-  // Send multiple chunks with part indicators
   for (let i = 0; i < chunks.length; i++) {
-    let chunkText = chunks[i];
+    await sendMessage(senderId, { text: chunks[i] }, token);
     
-    // Add part indicator for multi-chunk responses
-    if (chunks.length > 1) {
-      chunkText = `[Part ${i+1}/${chunks.length}]\n${chunkText}`;
-    }
-    
-    await sendMessage(senderId, { text: chunkText }, token);
-    
-    // Add delay between chunks to avoid rate limiting
+    // Add delay between chunks para iwas rate limit
     if (i < chunks.length - 1) {
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      await new Promise(resolve => setTimeout(resolve, 800));
     }
   }
 }
