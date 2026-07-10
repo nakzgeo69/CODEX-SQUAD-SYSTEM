@@ -84,7 +84,9 @@ module.exports = {
           },
           timeout: 120000
         });
-        aiResponse = response.data?.response || response.data?.answer || response.data?.message || '';
+        
+        // FIXED: Check for 'data' field first
+        aiResponse = response.data?.data || response.data?.response || response.data?.answer || response.data?.message || '';
         if (aiResponse) success = true;
       } catch (getError) {
         try {
@@ -96,7 +98,8 @@ module.exports = {
             },
             timeout: 120000
           });
-          aiResponse = response.data?.response || response.data?.answer || response.data?.message || '';
+          // FIXED: Check for 'data' field first
+          aiResponse = response.data?.data || response.data?.response || response.data?.answer || response.data?.message || '';
           if (aiResponse) success = true;
         } catch (retryError) {
           const chunks = splitPrompt(prompt, 2000);
@@ -110,7 +113,8 @@ module.exports = {
                 },
                 timeout: 60000
               });
-              const chunkText = chunkResponse.data?.response || chunkResponse.data?.answer || chunkResponse.data?.message || '';
+              // FIXED: Check for 'data' field first
+              const chunkText = chunkResponse.data?.data || chunkResponse.data?.response || chunkResponse.data?.answer || chunkResponse.data?.message || '';
               combined += chunkText + '\n';
             } catch (chunkError) {
               console.error(`[Chunk ${i+1}] ${chunkError.message}`);
