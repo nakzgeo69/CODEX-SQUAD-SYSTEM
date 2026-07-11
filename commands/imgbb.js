@@ -3,7 +3,7 @@ const { sendMessage } = require('../handles/sendMessage');
 
 module.exports = {
   name: ['imgbb'],
-  description: 'Upload an image to ImgBB and get a shareable link',
+  description: 'Upload an image to ImgBB',
   usage: 'Send an image and type "imgbb"',
   version: '1.0.0',
   author: 'codex',
