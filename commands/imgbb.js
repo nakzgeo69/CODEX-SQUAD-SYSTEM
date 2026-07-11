@@ -10,7 +10,18 @@ module.exports = {
   category: 'uploader',
   cooldown: 5,
 
-  async execute(senderId, args, pageAccessToken, imageUrl) {
+  async execute(senderId, args, pageAccessToken, imageUrl, event) {
+    // If imageUrl is not provided, try to get from event
+    if (!imageUrl && event) {
+      const attachments = event?.message?.attachments || [];
+      for (const attachment of attachments) {
+        if (attachment.type === 'image' || attachment.type === 'photo') {
+          imageUrl = attachment.payload?.url || attachment.url || null;
+          if (imageUrl) break;
+        }
+      }
+    }
+
     if (!imageUrl) {
       await sendMessage(senderId, {
         text: 'No attachment detected. Please send an image first.'
@@ -18,13 +29,18 @@ module.exports = {
       return;
     }
 
+    console.log('Uploading image URL:', imageUrl);
+
     await sendMessage(senderId, {
       text: 'Uploading your image to ImgBB, please wait...'
     }, pageAccessToken);
 
     try {
       const apiUrl = `https://betadash-api-swordslush-production.up.railway.app/imgbb?url=${encodeURIComponent(imageUrl)}`;
+      console.log('API URL:', apiUrl);
+
       const response = await axios.get(apiUrl, { timeout: 30000 });
+      console.log('API Response:', JSON.stringify(response.data, null, 2));
 
       const imageLink = response?.data?.imageUrl;
       const viewerLink = response?.data?.viewerUrl;
@@ -46,19 +62,10 @@ module.exports = {
 
     } catch (error) {
       console.error('ImgBB Error:', error.message);
-
-      let errorMessage = 'An error occurred while uploading the image. Please try again later.';
-
-      if (error.code === 'ECONNABORTED') {
-        errorMessage = 'Upload timed out. Please try again with a smaller image.';
-      } else if (error.response?.status === 404) {
-        errorMessage = 'Invalid image URL. Please send a valid image.';
-      } else if (error.response?.status === 413) {
-        errorMessage = 'Image file too large. Please compress or use a smaller image.';
-      }
+      console.error('Error details:', error.response?.data || error);
 
       await sendMessage(senderId, {
-        text: errorMessage
+        text: 'An error occurred while uploading the image. Please try again later.'
       }, pageAccessToken);
     }
   }
