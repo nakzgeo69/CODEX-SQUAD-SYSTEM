@@ -32,7 +32,7 @@ module.exports = {
     console.log('Uploading image URL:', imageUrl);
 
     await sendMessage(senderId, {
-      text: 'Uploading your image to ImgBB, please wait...'
+      text: ''
     }, pageAccessToken);
 
     try {
