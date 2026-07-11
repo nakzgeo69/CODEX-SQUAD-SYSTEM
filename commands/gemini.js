@@ -1,89 +1,153 @@
+// commands/gemini.js
 const axios = require('axios');
-const { sendMessage } = require('../handles/sendMessage');
+const fs = require('fs');
+const path = require('path');
 
 module.exports = {
   name: 'gemini',
-  description: 'Chat with Gemini 2.5 Flash',
-  usage: 'gemini [prompt]',
-  author: 'codex',
-
-  async execute(senderId, args, token, attachment) {
-    let prompt = args.join(' ').trim();
-    let imageUrl = null;
-
-    if (attachment && attachment.type === 'image') {
-      imageUrl = attachment.payload.url;
-    }
-
-    if (!prompt) {
-      await sendMessage(senderId, {
-        text: 'Please provide a prompt.'
-      }, token);
-      return;
-    }
-
+  description: 'Analyze images using Gemini AI',
+  usage: '!gemini [prompt] (with image attachment or URL)',
+  cooldown: 5,
+  
+  async execute(senderId, messageText, attachment, pageAccessToken) {
     try {
-      const encodedPrompt = encodeURIComponent(prompt);
-      let apiUrl = `https://norch-project.gleeze.com/api/gemini?prompt=${encodedPrompt}`;
-
-      if (imageUrl) {
-        const encodedImage = encodeURIComponent(imageUrl);
-        apiUrl += `&imageurl=${encodedImage}`;
-      }
-
-      const response = await axios.get(apiUrl, {
-        timeout: 30000
-      });
-
-      const aiResponse = response.data.response;
-
-      if (!aiResponse) {
-        throw new Error('Invalid API response');
-      }
-
-      let formattedResponse = aiResponse.trim();
+      let imageUrl = null;
+      let prompt = messageText || 'What can you help me with?';
       
-      formattedResponse = formattedResponse.replace(/\*\*(.+?)\*\*/g, '$1');
-      formattedResponse = formattedResponse.replace(/#{1,6}\s/g, '');
-      formattedResponse = formattedResponse.replace(/---+/g, '');
-      formattedResponse = formattedResponse.replace(/__/g, '');
-      formattedResponse = formattedResponse.replace(/_/g, '');
-      formattedResponse = formattedResponse.replace(/\*{1,}/g, '');
-      formattedResponse = formattedResponse.replace(/[\u{1F000}-\u{1FFFF}]/gu, '');
-      formattedResponse = formattedResponse.replace(/[\u{2600}-\u{27BF}]/gu, '');
-      formattedResponse = formattedResponse.replace(/[\u{FE00}-\u{FEFF}]/gu, '');
-      formattedResponse = formattedResponse.replace(/\n{3,}/g, '\n\n');
-      formattedResponse = formattedResponse.replace(/[ \t]+/g, ' ');
-      formattedResponse = formattedResponse.trim();
-
-      await sendChunks(senderId, formattedResponse, token);
-
-    } catch (error) {
-      const reason = error.response
-        ? `API error ${error.response.status}`
-        : error.message ?? 'Unknown error';
-
-      console.error(`[Gemini] Failed for sender ${senderId}: ${reason}`);
+      const urlMatch = messageText.match(/https?:\/\/[^\s]+\.(?:jpg|jpeg|png|gif|webp|ibb\.co)/i);
+      if (urlMatch) {
+        imageUrl = urlMatch[0];
+        prompt = messageText.replace(urlMatch[0], '').trim() || 'Analyze this image';
+      }
+      
+      if (attachment && attachment.payload && attachment.payload.url) {
+        imageUrl = attachment.payload.url;
+      }
+      
+      if (!imageUrl) {
+        await sendMessage(senderId, {
+          text: 'Please provide an image. Usage: !gemini [prompt] (with image attachment or URL)'
+        }, pageAccessToken);
+        return;
+      }
+      
       await sendMessage(senderId, {
-        text: 'Server error. Please try again after 15.0s.'
-      }, token);
+        text: 'Processing your image...'
+      }, pageAccessToken);
+      
+      const encodedPrompt = encodeURIComponent(prompt);
+      const encodedImageUrl = encodeURIComponent(imageUrl);
+      const apiUrl = `https://norch-project.gleeze.com/api/gemini?prompt=${encodedPrompt}&imageurl=${encodedImageUrl}`;
+      
+      const response = await axios.get(apiUrl, {
+        timeout: 60000,
+        headers: {
+          'Accept': 'application/json'
+        }
+      });
+      
+      if (response.status === 200 && response.data) {
+        const data = response.data;
+        
+        let cleanResponse = data.response || 'No response from Gemini API.';
+        
+        cleanResponse = cleanResponse
+          .replace(/^I'm a Gemini.*?model.*?\n\n?/i, '')
+          .replace(/\*\*/g, '')
+          .replace(/\*/g, '')
+          .replace(/#{1,6}\s/g, '')
+          .replace(/`/g, '')
+          .replace(/_/g, '')
+          .replace(/~{2}/g, '')
+          .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+          .replace(/\n{3,}/g, '\n\n')
+          .trim();
+        
+        await sendMessage(senderId, {
+          text: cleanResponse
+        }, pageAccessToken);
+        
+        logToFile(senderId, data);
+        
+      } else {
+        throw new Error('Invalid response from Gemini API');
+      }
+      
+    } catch (error) {
+      console.error('[GEMINI ERROR]', error.message);
+      
+      let errorMessage = 'Error analyzing image. ';
+      
+      if (error.response) {
+        if (error.response.status === 500) {
+          errorMessage += 'The API server is currently unavailable. Please try again later.';
+        } else if (error.response.status === 429) {
+          errorMessage += 'Rate limit exceeded. Please wait a moment.';
+        } else {
+          errorMessage += `API Error: ${error.response.status}`;
+        }
+      } else if (error.code === 'ECONNABORTED') {
+        errorMessage += 'Request timeout. The image may be too large.';
+      } else {
+        errorMessage += 'Failed to connect to the API. Please check your connection.';
+      }
+      
+      await sendMessage(senderId, {
+        text: errorMessage
+      }, pageAccessToken);
     }
   }
 };
 
-const MAX_CHUNK = 1900;
-
-function splitMessage(text) {
-  const chunks = [];
-  for (let i = 0; i < text.length; i += MAX_CHUNK) {
-    chunks.push(text.slice(i, i + MAX_CHUNK));
+async function sendMessage(recipientId, message, pageAccessToken) {
+  try {
+    const url = `https://graph.facebook.com/v18.0/me/messages?access_token=${pageAccessToken}`;
+    
+    const response = await axios.post(url, {
+      recipient: { id: recipientId },
+      message: message
+    }, {
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    });
+    
+    return response.data;
+  } catch (error) {
+    console.error('[MESSENGER ERROR]', error.response?.data || error.message);
+    throw error;
   }
-  return chunks;
 }
 
-async function sendChunks(senderId, text, token) {
-  const chunks = splitMessage(text);
-  for (let i = 0; i < chunks.length; i++) {
-    await sendMessage(senderId, { text: chunks[i] }, token);
+function logToFile(senderId, data) {
+  try {
+    const logDir = path.join(__dirname, '..', 'logs');
+    if (!fs.existsSync(logDir)) {
+      fs.mkdirSync(logDir, { recursive: true });
+    }
+    
+    const logFile = path.join(logDir, 'gemini_analysis.log');
+    const logEntry = {
+      timestamp: new Date().toISOString(),
+      userId: senderId,
+      model: data.model || 'gemini-2.5-flash',
+      prompt: data.prompt,
+      responseLength: data.response?.length || 0,
+      author: data.author
+    };
+    
+    fs.appendFileSync(logFile, JSON.stringify(logEntry) + '\n');
+  } catch (error) {
+    console.error('[LOG ERROR]', error.message);
   }
 }
+
+module.exports.config = {
+  name: 'gemini',
+  aliases: ['ai', 'analyze', 'vision'],
+  description: 'Analyze images using Gemini 2.5 Flash AI',
+  usage: '!gemini [prompt] (with image)',
+  category: 'AI',
+  cooldown: 5,
+  permissions: ['user']
+};
