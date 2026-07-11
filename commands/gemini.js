@@ -1,56 +1,67 @@
-// commands/gemini.js
 const axios = require('axios');
-const fs = require('fs');
-const path = require('path');
+const { sendMessage } = require('../handles/sendMessage');
 
 module.exports = {
-  name: 'gemini',
+  name: ['gemini', 'explain', 'answer', 'criticize', 'analyze', 'vision'],
   description: 'Analyze images using Gemini AI',
-  usage: '!gemini [prompt] (with image attachment or URL)',
+  usage: 'gemini [prompt] (with image attachment or URL)',
+  version: '1.0.0',
+  author: 'codex',
+  category: 'AI',
   cooldown: 5,
-  
-  async execute(senderId, messageText, attachment, pageAccessToken) {
+
+  async execute(senderId, args, token, event) {
     try {
-      let imageUrl = null;
-      let prompt = messageText || 'What can you help me with?';
+      // Get prompt from args
+      let prompt = args.join(' ') || 'What can you help me with?';
       
-      const urlMatch = messageText.match(/https?:\/\/[^\s]+\.(?:jpg|jpeg|png|gif|webp|ibb\.co)/i);
-      if (urlMatch) {
-        imageUrl = urlMatch[0];
-        prompt = messageText.replace(urlMatch[0], '').trim() || 'Analyze this image';
+      // Extract image URL from event
+      let imageUrl = await extractImageUrl(event, token);
+      
+      // Check if prompt contains image URL
+      if (!imageUrl) {
+        const urlMatch = prompt.match(/(https?:\/\/[^\s]+\.(?:jpg|jpeg|png|gif|webp|bmp|svg|ibb\.co))/i);
+        if (urlMatch) {
+          imageUrl = urlMatch[0];
+          prompt = prompt.replace(urlMatch[0], '').trim() || 'Analyze this image';
+        }
       }
-      
-      if (attachment && attachment.payload && attachment.payload.url) {
-        imageUrl = attachment.payload.url;
-      }
-      
+
       if (!imageUrl) {
         await sendMessage(senderId, {
-          text: 'Please provide an image. Usage: !gemini [prompt] (with image attachment or URL)'
-        }, pageAccessToken);
+          text: 'Please provide an image. Usage:\n1. Send an image with caption: gemini [prompt]\n2. Reply to an image: gemini [prompt]\n3. Provide image URL: gemini [prompt] https://example.com/image.jpg'
+        }, token);
         return;
       }
-      
+
+      console.log(`[gemini] Processing image: ${imageUrl}`);
+      console.log(`[gemini] Prompt: ${prompt}`);
+
       await sendMessage(senderId, {
-        text: 'Processing your image...'
-      }, pageAccessToken);
-      
+        text: 'Analyzing your image with Gemini AI...'
+      }, token);
+
       const encodedPrompt = encodeURIComponent(prompt);
       const encodedImageUrl = encodeURIComponent(imageUrl);
       const apiUrl = `https://norch-project.gleeze.com/api/gemini?prompt=${encodedPrompt}&imageurl=${encodedImageUrl}`;
       
+      console.log('[gemini] API URL:', apiUrl);
+
       const response = await axios.get(apiUrl, {
         timeout: 60000,
         headers: {
           'Accept': 'application/json'
         }
       });
-      
+
+      console.log('[gemini] API Response:', response.data);
+
       if (response.status === 200 && response.data) {
         const data = response.data;
         
         let cleanResponse = data.response || 'No response from Gemini API.';
         
+        // Clean the response
         cleanResponse = cleanResponse
           .replace(/^I'm a Gemini.*?model.*?\n\n?/i, '')
           .replace(/\*\*/g, '')
@@ -63,91 +74,110 @@ module.exports = {
           .replace(/\n{3,}/g, '\n\n')
           .trim();
         
-        await sendMessage(senderId, {
-          text: cleanResponse
-        }, pageAccessToken);
-        
-        logToFile(senderId, data);
+        // Split long messages
+        if (cleanResponse.length > 2000) {
+          const chunks = splitMessage(cleanResponse);
+          for (const chunk of chunks) {
+            await sendMessage(senderId, {
+              text: chunk
+            }, token);
+          }
+        } else {
+          await sendMessage(senderId, {
+            text: cleanResponse
+          }, token);
+        }
         
       } else {
         throw new Error('Invalid response from Gemini API');
       }
       
     } catch (error) {
-      console.error('[GEMINI ERROR]', error.message);
-      
+      console.error('[gemini] Error:', {
+        message: error.message,
+        response: error.response?.data,
+        status: error.response?.status
+      });
+
       let errorMessage = 'Error analyzing image. ';
       
-      if (error.response) {
-        if (error.response.status === 500) {
-          errorMessage += 'The API server is currently unavailable. Please try again later.';
-        } else if (error.response.status === 429) {
-          errorMessage += 'Rate limit exceeded. Please wait a moment.';
-        } else {
-          errorMessage += `API Error: ${error.response.status}`;
-        }
+      if (error.response?.status === 500) {
+        errorMessage += 'The API server is currently unavailable. Please try again later.';
+      } else if (error.response?.status === 429) {
+        errorMessage += 'Rate limit exceeded. Please wait a moment.';
       } else if (error.code === 'ECONNABORTED') {
         errorMessage += 'Request timeout. The image may be too large.';
       } else {
-        errorMessage += 'Failed to connect to the API. Please check your connection.';
+        errorMessage += error.message || 'Failed to connect to the API.';
       }
-      
+
       await sendMessage(senderId, {
         text: errorMessage
-      }, pageAccessToken);
+      }, token);
     }
   }
 };
 
-async function sendMessage(recipientId, message, pageAccessToken) {
+// --- HELPER FUNCTIONS ---
+
+async function extractImageUrl(event, token) {
   try {
-    const url = `https://graph.facebook.com/v18.0/me/messages?access_token=${pageAccessToken}`;
+    // Check if replying to an image
+    if (event?.message?.reply_to?.mid) {
+      return await getRepliedImage(event.message.reply_to.mid, token);
+    } 
     
-    const response = await axios.post(url, {
-      recipient: { id: recipientId },
-      message: message
-    }, {
-      headers: {
-        'Content-Type': 'application/json'
+    // Check if message has image attachment
+    if (event?.message?.attachments && event.message.attachments.length > 0) {
+      for (const attachment of event.message.attachments) {
+        if (attachment.type === 'image' || attachment.type === 'photo') {
+          return attachment.payload?.url || attachment.url || null;
+        }
       }
-    });
-    
-    return response.data;
-  } catch (error) {
-    console.error('[MESSENGER ERROR]', error.response?.data || error.message);
-    throw error;
-  }
-}
-
-function logToFile(senderId, data) {
-  try {
-    const logDir = path.join(__dirname, '..', 'logs');
-    if (!fs.existsSync(logDir)) {
-      fs.mkdirSync(logDir, { recursive: true });
     }
-    
-    const logFile = path.join(logDir, 'gemini_analysis.log');
-    const logEntry = {
-      timestamp: new Date().toISOString(),
-      userId: senderId,
-      model: data.model || 'gemini-2.5-flash',
-      prompt: data.prompt,
-      responseLength: data.response?.length || 0,
-      author: data.author
+  } catch (err) {
+    console.error('[Image Extraction] Failed:', err);
+  }
+  return null;
+}
+
+async function getRepliedImage(mid, token) {
+  try {
+    const url = `https://graph.facebook.com/v21.0/${mid}/attachments`;
+    const params = {
+      access_token: token
     };
+    const { data } = await axios.get(url, { params });
     
-    fs.appendFileSync(logFile, JSON.stringify(logEntry) + '\n');
-  } catch (error) {
-    console.error('[LOG ERROR]', error.message);
+    if (data?.data && data.data.length > 0) {
+      const attachment = data.data[0];
+      return attachment?.image_data?.url || attachment?.url || null;
+    }
+    return null;
+  } catch (err) {
+    console.error('[Replied Image] Failed:', err.response?.data || err.message);
+    return null;
   }
 }
 
-module.exports.config = {
-  name: 'gemini',
-  aliases: ['ai', 'analyze', 'vision'],
-  description: 'Analyze images using Gemini 2.5 Flash AI',
-  usage: '!gemini [prompt] (with image)',
-  category: 'AI',
-  cooldown: 5,
-  permissions: ['user']
-};
+function splitMessage(text) {
+  const maxLength = 2000;
+  const chunks = [];
+  let currentChunk = '';
+  
+  const lines = text.split('\n');
+  for (const line of lines) {
+    if (currentChunk.length + line.length + 1 > maxLength) {
+      chunks.push(currentChunk.trim());
+      currentChunk = line + '\n';
+    } else {
+      currentChunk += line + '\n';
+    }
+  }
+  
+  if (currentChunk.trim()) {
+    chunks.push(currentChunk.trim());
+  }
+  
+  return chunks;
+}
