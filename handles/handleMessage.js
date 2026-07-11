@@ -41,41 +41,63 @@ const handleMessage = async (event, pageAccessToken) => {
   const messageText = event?.message?.text?.trim();
   const attachments = event?.message?.attachments || [];
   
-  // DEBUGGING: Log the full event to see what's inside
-  console.log('FULL EVENT:', JSON.stringify(event, null, 2));
-  console.log('ATTACHMENTS:', JSON.stringify(attachments, null, 2));
-  
+  // Extract image URL from attachments
   let imageUrl = null;
+  let hasImage = false;
   
-  // Try different ways to extract image URL
-  if (attachments && attachments.length > 0) {
-    for (const attachment of attachments) {
-      console.log('Attachment type:', attachment.type);
-      console.log('Attachment payload:', JSON.stringify(attachment.payload, null, 2));
-      
-      if (attachment.type === 'image' || attachment.type === 'photo') {
-        // Try multiple possible locations of the URL
-        imageUrl = attachment.payload?.url || 
-                   attachment.payload?.image?.url || 
-                   attachment.url || 
-                   null;
-        
-        if (imageUrl) {
-          console.log('IMAGE URL FOUND:', imageUrl);
-          imageCache.set(senderId, {
-            url: imageUrl,
-            timestamp: Date.now()
-          });
-          break;
-        }
+  for (const attachment of attachments) {
+    if (attachment.type === 'image' || attachment.type === 'photo') {
+      imageUrl = attachment.payload?.url || attachment.url || null;
+      hasImage = true;
+      if (imageUrl) {
+        imageCache.set(senderId, {
+          url: imageUrl,
+          timestamp: Date.now()
+        });
+        break;
       }
     }
   }
   
-  // If no image in attachments, try to get from cache
-  if (!imageUrl && imageCache.has(senderId)) {
-    imageUrl = imageCache.get(senderId).url;
-    console.log('Using cached image URL:', imageUrl);
+  // If message has image and no text command, auto-upload to imgbb
+  if (hasImage && imageUrl && !messageText) {
+    console.log('Auto-uploading image to ImgBB...');
+    const imgbbCommand = commands.get('imgbb');
+    if (imgbbCommand) {
+      await imgbbCommand.execute(senderId, [], pageAccessToken, imageUrl, event);
+      return;
+    }
+  }
+  
+  // If message has image and text is not a command, auto-upload with caption
+  if (hasImage && imageUrl && messageText) {
+    // Check if message starts with command prefix
+    const isCommand = messageText.startsWith(prefix);
+    const [commandName] = isCommand 
+      ? messageText.slice(prefix.length).split(' ')
+      : messageText.split(' ');
+    
+    const normalizedCommand = commandName.toLowerCase();
+    const command = commands.get(normalizedCommand);
+    
+    // If it's a command, execute it
+    if (command) {
+      const args = messageText.split(' ').slice(1);
+      await command.execute(senderId, args, pageAccessToken, imageUrl, event);
+      return;
+    }
+    
+    // If it's not a command, auto-upload to imgbb with caption as prompt
+    console.log('Auto-uploading image with caption...');
+    const imgbbCommand = commands.get('imgbb');
+    if (imgbbCommand) {
+      await imgbbCommand.execute(senderId, [], pageAccessToken, imageUrl, event);
+      // Also send the caption as a separate message
+      await sendMessage(senderId, {
+        text: `${messageText}`
+      }, pageAccessToken);
+      return;
+    }
   }
   
   if (!messageText) return;
@@ -91,15 +113,8 @@ const handleMessage = async (event, pageAccessToken) => {
     const command = commands.get(normalizedCommand);
     
     if (command) {
-      console.log(`Executing command: ${normalizedCommand} with imageUrl:`, imageUrl);
-      
-      if (normalizedCommand === 'imgbb') {
-        await command.execute(senderId, args, pageAccessToken, imageUrl);
-      } else if (normalizedCommand === 'ai') {
-        await command.execute(senderId, [messageText], pageAccessToken, event, sendMessage, imageCache);
-      } else {
-        await command.execute(senderId, args, pageAccessToken);
-      }
+      // Pass event to all commands
+      await command.execute(senderId, args, pageAccessToken, imageUrl, event);
     } else if (commands.has('ai')) {
       await commands.get('ai').execute(senderId, [messageText], pageAccessToken, event, sendMessage, imageCache);
     } else {
