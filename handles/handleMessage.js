@@ -7,12 +7,11 @@ const imageCache = new Map();
 const prefix = '-';
 const CACHE_TTL = 10 * 60 * 1000; 
 
-// Load commands on startup
 const loadCommands = () => {
   const commandsDir = path.join(__dirname, '../commands');
   
   for (const file of fs.readdirSync(commandsDir).filter(f => f.endsWith('.js'))) {
-    delete require.cache[require.resolve(`../commands/${file}`)]; // Hot reload
+    delete require.cache[require.resolve(`../commands/${file}`)];
     const command = require(`../commands/${file}`);
     
     const names = Array.isArray(command.name) ? command.name : [command.name];
@@ -42,13 +41,15 @@ const handleMessage = async (event, pageAccessToken) => {
   const messageText = event?.message?.text?.trim();
   const attachments = event?.message?.attachments || [];
   
-  // Cache images
+  let imageUrl = null;
   for (const attachment of attachments) {
     if (attachment.type === 'image' && attachment.payload?.url) {
+      imageUrl = attachment.payload.url;
       imageCache.set(senderId, {
         url: attachment.payload.url,
         timestamp: Date.now()
       });
+      break;
     }
   }
   
@@ -65,16 +66,24 @@ const handleMessage = async (event, pageAccessToken) => {
     const command = commands.get(normalizedCommand);
     
     if (command) {
-      await command.execute(senderId, args, pageAccessToken, event, sendMessage, imageCache);
+      // Check if command is 'imgbb' to pass imageUrl
+      if (normalizedCommand === 'imgbb') {
+        await command.execute(senderId, args, pageAccessToken, imageUrl);
+      } else if (normalizedCommand === 'ai') {
+        // AI command needs full event
+        await command.execute(senderId, [messageText], pageAccessToken, event, sendMessage, imageCache);
+      } else {
+        // Other commands just need basic parameters
+        await command.execute(senderId, args, pageAccessToken);
+      }
     } else if (commands.has('ai')) {
-
       await commands.get('ai').execute(senderId, [messageText], pageAccessToken, event, sendMessage, imageCache);
     } else {
       await sendMessage(senderId, { text: 'Unknown command. Type "help" for available commands.' }, pageAccessToken);
     }
   } catch (error) {
     console.error('Command execution error:', error.message);
-    await sendMessage(senderId, { text: '❌ Command execution failed.' }, pageAccessToken);
+    await sendMessage(senderId, { text: 'Command execution failed.' }, pageAccessToken);
   }
 };
 
