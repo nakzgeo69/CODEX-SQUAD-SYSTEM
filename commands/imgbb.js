@@ -49,7 +49,7 @@ module.exports = {
         throw new Error('No image URL found in API response');
       }
 
-      let replyText = '';
+      let replyText = `\n\n`;
       replyText += `${imageLink || viewerLink}\n`;
       
       if (imageLink && viewerLink && imageLink !== viewerLink) {
