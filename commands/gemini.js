@@ -23,37 +23,40 @@ module.exports = {
     }
 
     try {
-      const response = await axios.post('https://api.gemini.com/api/send', {
-        model: 'gemini-2.5-flash',
-        prompt: prompt,
-        imageurl: imageUrl || null
-      }, {
-        timeout: 30000,
-        headers: {
-          'Content-Type': 'application/json'
-        }
+      const encodedPrompt = encodeURIComponent(prompt);
+      let apiUrl = `https://norch-project.gleeze.com/api/gemini?prompt=${encodedPrompt}`;
+
+      if (imageUrl) {
+        const encodedImage = encodeURIComponent(imageUrl);
+        apiUrl += `&imageurl=${encodedImage}`;
+      }
+
+      const response = await axios.get(apiUrl, {
+        timeout: 30000
       });
 
-      if (!response?.data?.response) {
+      const aiResponse = response.data.response;
+
+      if (!aiResponse) {
         throw new Error('Invalid API response');
       }
 
-      let aiResponse = response.data.response.trim();
+      let formattedResponse = aiResponse.trim();
       
-      aiResponse = aiResponse.replace(/\*\*(.+?)\*\*/g, '*$1*');
-      aiResponse = aiResponse.replace(/#{1,6}\s/g, '');
-      aiResponse = aiResponse.replace(/---+/g, '');
-      aiResponse = aiResponse.replace(/__/g, '');
-      aiResponse = aiResponse.replace(/_/g, '');
-      aiResponse = aiResponse.replace(/\*{3,}/g, '**');
-      aiResponse = aiResponse.replace(/[\u{1F000}-\u{1FFFF}]/gu, '');
-      aiResponse = aiResponse.replace(/[\u{2600}-\u{27BF}]/gu, '');
-      aiResponse = aiResponse.replace(/[\u{FE00}-\u{FEFF}]/gu, '');
-      aiResponse = aiResponse.replace(/\n{3,}/g, '\n\n');
-      aiResponse = aiResponse.replace(/[ \t]+/g, ' ');
-      aiResponse = aiResponse.trim();
+      formattedResponse = formattedResponse.replace(/\*\*(.+?)\*\*/g, '*$1*');
+      formattedResponse = formattedResponse.replace(/#{1,6}\s/g, '');
+      formattedResponse = formattedResponse.replace(/---+/g, '');
+      formattedResponse = formattedResponse.replace(/__/g, '');
+      formattedResponse = formattedResponse.replace(/_/g, '');
+      formattedResponse = formattedResponse.replace(/\*{3,}/g, '**');
+      formattedResponse = formattedResponse.replace(/[\u{1F000}-\u{1FFFF}]/gu, '');
+      formattedResponse = formattedResponse.replace(/[\u{2600}-\u{27BF}]/gu, '');
+      formattedResponse = formattedResponse.replace(/[\u{FE00}-\u{FEFF}]/gu, '');
+      formattedResponse = formattedResponse.replace(/\n{3,}/g, '\n\n');
+      formattedResponse = formattedResponse.replace(/[ \t]+/g, ' ');
+      formattedResponse = formattedResponse.trim();
 
-      await sendChunks(senderId, aiResponse, token);
+      await sendChunks(senderId, formattedResponse, token);
 
     } catch (error) {
       const reason = error.response
