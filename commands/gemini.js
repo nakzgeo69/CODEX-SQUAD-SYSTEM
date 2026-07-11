@@ -1,5 +1,5 @@
 const axios = require('axios');
-const { sendMessage } = require('../handles/handleMessage');
+const { sendMessage } = require('../handles/sendMessage');
 
 module.exports = {
   name: 'gemini',
@@ -30,8 +30,6 @@ module.exports = {
         const encodedImage = encodeURIComponent(imageUrl);
         apiUrl += `&imageurl=${encodedImage}`;
       }
-
-      console.log('API URL:', apiUrl);
 
       const response = await axios.get(apiUrl, {
         timeout: 30000
