@@ -41,16 +41,41 @@ const handleMessage = async (event, pageAccessToken) => {
   const messageText = event?.message?.text?.trim();
   const attachments = event?.message?.attachments || [];
   
+  // DEBUGGING: Log the full event to see what's inside
+  console.log('FULL EVENT:', JSON.stringify(event, null, 2));
+  console.log('ATTACHMENTS:', JSON.stringify(attachments, null, 2));
+  
   let imageUrl = null;
-  for (const attachment of attachments) {
-    if (attachment.type === 'image' && attachment.payload?.url) {
-      imageUrl = attachment.payload.url;
-      imageCache.set(senderId, {
-        url: attachment.payload.url,
-        timestamp: Date.now()
-      });
-      break;
+  
+  // Try different ways to extract image URL
+  if (attachments && attachments.length > 0) {
+    for (const attachment of attachments) {
+      console.log('Attachment type:', attachment.type);
+      console.log('Attachment payload:', JSON.stringify(attachment.payload, null, 2));
+      
+      if (attachment.type === 'image' || attachment.type === 'photo') {
+        // Try multiple possible locations of the URL
+        imageUrl = attachment.payload?.url || 
+                   attachment.payload?.image?.url || 
+                   attachment.url || 
+                   null;
+        
+        if (imageUrl) {
+          console.log('IMAGE URL FOUND:', imageUrl);
+          imageCache.set(senderId, {
+            url: imageUrl,
+            timestamp: Date.now()
+          });
+          break;
+        }
+      }
     }
+  }
+  
+  // If no image in attachments, try to get from cache
+  if (!imageUrl && imageCache.has(senderId)) {
+    imageUrl = imageCache.get(senderId).url;
+    console.log('Using cached image URL:', imageUrl);
   }
   
   if (!messageText) return;
@@ -66,14 +91,13 @@ const handleMessage = async (event, pageAccessToken) => {
     const command = commands.get(normalizedCommand);
     
     if (command) {
-      // Check if command is 'imgbb' to pass imageUrl
+      console.log(`Executing command: ${normalizedCommand} with imageUrl:`, imageUrl);
+      
       if (normalizedCommand === 'imgbb') {
         await command.execute(senderId, args, pageAccessToken, imageUrl);
       } else if (normalizedCommand === 'ai') {
-        // AI command needs full event
         await command.execute(senderId, [messageText], pageAccessToken, event, sendMessage, imageCache);
       } else {
-        // Other commands just need basic parameters
         await command.execute(senderId, args, pageAccessToken);
       }
     } else if (commands.has('ai')) {
