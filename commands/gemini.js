@@ -5,7 +5,7 @@ module.exports = {
   name: 'gemini',
   description: 'Chat with Gemini 2.5 Flash',
   usage: 'gemini [prompt]',
-  author: 'April Manalo',
+  author: 'codex',
 
   async execute(senderId, args, token, attachment) {
     let prompt = args.join(' ').trim();
