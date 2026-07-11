@@ -5,12 +5,6 @@ const { sendMessage } = require('../handles/sendMessage');
 const userCooldowns = new Map();
 const COOLDOWN_TIME = 180000; // 3 minutes
 
-// Global rate limit tracking
-const globalRateLimit = {
-    count: 0,
-    resetTime: Date.now() + 60000 // 1 minute
-};
-
 module.exports = {
     name: ['smsbomb', 'smsbomber', 'bomb'],
     usage: 'smsbomb [phone] | [amount]',
@@ -21,21 +15,8 @@ module.exports = {
     cooldown: 180,
 
     async execute(senderId, args, token, event) {
-        // Check global rate limit
         const now = Date.now();
-        if (now > globalRateLimit.resetTime) {
-            globalRateLimit.count = 0;
-            globalRateLimit.resetTime = now + 60000;
-        }
         
-        if (globalRateLimit.count >= 3) {
-            const remainingSeconds = Math.ceil((globalRateLimit.resetTime - now) / 1000);
-            await sendMessage(senderId, {
-                text: `Global Rate Limit Reached\n\nPlease wait ${remainingSeconds} seconds before using this command again.\n\nThis is to prevent abuse of the SMS bombing service.`
-            }, token);
-            return;
-        }
-
         // Check user cooldown
         const lastUsed = userCooldowns.get(senderId);
         if (lastUsed && (now - lastUsed) < COOLDOWN_TIME) {
@@ -59,21 +40,21 @@ module.exports = {
         // Check if phone number and amount are provided
         if (args.length < 2) {
             await sendMessage(senderId, { 
-                text: `SMS Bomber Tool\n\nUsage:\nsmsbomb [phone] | [amount]\n\nExample:\nsmsbomb 09123456789 | 10\n\nAmount Range: 1-100 messages\nCooldown: 3 minutes\nGlobal Limit: 3 requests per minute`
+                text: `SMS Bomber Tool\n\nUsage:\nsmsbomb [phone] | [amount]\n\nExample:\nsmsbomb 09123456789 | 10\n\nAmount Range: 1-100 messages\nCooldown: 3 minutes`
             }, token);
             return;
         }
 
         // Parse args with | separator
-        let phone, amount;
+        let phone, requestedAmount;
         const separatorIndex = args.findIndex(arg => arg === '|');
 
         if (separatorIndex !== -1) {
             phone = args.slice(0, separatorIndex).join(' ');
-            amount = parseInt(args[separatorIndex + 1]);
+            requestedAmount = parseInt(args[separatorIndex + 1]);
         } else {
             phone = args[0];
-            amount = parseInt(args[1]);
+            requestedAmount = parseInt(args[1]);
         }
 
         const apiKey = '79d08d76a3deae3fae1c7637141db818ec02faf1e3597e302c4ed9e1d5211d89';
@@ -85,21 +66,18 @@ module.exports = {
         }
 
         // Validate amount
-        if (isNaN(amount) || amount < 1 || amount > 100) {
+        if (isNaN(requestedAmount) || requestedAmount < 1 || requestedAmount > 100) {
             await sendMessage(senderId, { text: 'Amount must be between 1 and 100' }, token);
             return;
         }
 
-        // Increment global rate limit
-        globalRateLimit.count++;
-
-        await sendMessage(senderId, { text: `Starting SMS bombing to ${phone} with ${amount} messages...` }, token);
+        await sendMessage(senderId, { text: `Starting SMS bombing to ${phone}...` }, token);
 
         try {
             const response = await axios.get('https://haji-mix-api.gleeze.com/api/smsbomber', {
                 params: {
                     phone: phone,
-                    amount: amount,
+                    amount: requestedAmount,
                     api_key: apiKey
                 },
                 timeout: 30000
@@ -107,62 +85,56 @@ module.exports = {
 
             console.log('Full API Response:', JSON.stringify(response.data, null, 2));
 
-            let successCount = 0;
-            let failedCount = 0;
-            
             if (response.data) {
-                // Extract success count
+                // Set cooldown
+                userCooldowns.set(senderId, Date.now());
+
+                // Get the actual amount sent from the response
+                let actualSent = 0;
+                
+                // Try to get actual count from different response formats
                 if (response.data.success_count !== undefined) {
-                    successCount = parseInt(response.data.success_count) || 0;
+                    actualSent = parseInt(response.data.success_count) || 0;
                 } else if (response.data.sent !== undefined) {
-                    successCount = parseInt(response.data.sent) || 0;
+                    actualSent = parseInt(response.data.sent) || 0;
                 } else if (response.data.total !== undefined) {
-                    successCount = parseInt(response.data.total) || 0;
+                    actualSent = parseInt(response.data.total) || 0;
                 } else if (response.data.count !== undefined) {
-                    successCount = parseInt(response.data.count) || 0;
+                    actualSent = parseInt(response.data.count) || 0;
                 } else if (response.data.success !== undefined) {
-                    successCount = parseInt(response.data.success) || 0;
+                    actualSent = parseInt(response.data.success) || 0;
                 } else if (response.data.message) {
                     const countMatch = response.data.message.match(/(\d+)/);
                     if (countMatch) {
-                        successCount = parseInt(countMatch[1]) || amount;
+                        actualSent = parseInt(countMatch[1]) || requestedAmount;
                     } else {
-                        successCount = amount;
+                        actualSent = requestedAmount;
                     }
                 } else {
-                    successCount = amount;
+                    actualSent = requestedAmount;
                 }
 
-                // Extract failed count
-                if (response.data.failed_count !== undefined) {
-                    failedCount = parseInt(response.data.failed_count) || 0;
-                } else if (response.data.failed !== undefined) {
-                    failedCount = parseInt(response.data.failed) || 0;
+                // If actualSent is 0, use the requested amount
+                if (actualSent === 0) {
+                    actualSent = requestedAmount;
                 }
 
-                // Ensure successCount does not exceed amount
-                if (successCount > amount) {
-                    successCount = amount;
-                }
-
-                // Set user cooldown
-                userCooldowns.set(senderId, Date.now());
-
+                // Build response message
                 let message = `SMS Bombing Complete\n\n`;
                 message += `Target: ${phone}\n`;
-                message += `Requested: ${amount} messages\n`;
-                message += `Sent Successfully: ${successCount}\n`;
-                message += `Failed to Send: ${failedCount}\n`;
+                message += `Requested: ${requestedAmount} messages\n`;
+                message += `Successfully Sent: ${actualSent}\n\n`;
 
-                if (successCount !== amount) {
-                    message += `\nNote: Only ${successCount} out of ${amount} messages were sent.`;
+                if (actualSent !== requestedAmount) {
+                    message += `Note: The system sent ${actualSent} messages instead of ${requestedAmount}.\n`;
+                    message += `This is due to the API's automatic message limit.\n\n`;
                 }
 
-                message += `\n\nNext use available in 3 minutes\nGlobal Limit: ${globalRateLimit.count}/3 per minute`;
+                message += `Next use available in 3 minutes`;
 
                 await sendMessage(senderId, { text: message }, token);
                 
-                console.log(`SMS bomb: Requested ${amount}, Sent ${successCount}, Failed ${failedCount} to ${phone} by user ${senderId}`);
+                console.log(`SMS bomb: Requested ${requestedAmount}, Actual Sent ${actualSent} to ${phone} by user ${senderId}`);
                 
             } else {
                 await sendMessage(senderId, { 
@@ -176,7 +148,7 @@ module.exports = {
             let errorMessage = `Error Occurred\n\n`;
             
             if (error.response?.status === 429) {
-                errorMessage += `Rate limit exceeded. Please wait a few minutes before trying again.\n\nThe SMS bombing service has a limit of 3 requests per minute.`;
+                errorMessage += `Rate limit exceeded. Please wait a few minutes before trying again.`;
             } else if (error.response?.status === 500) {
                 errorMessage += `Server error. Please try again later.`;
             } else if (error.response?.status === 400) {
