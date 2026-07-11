@@ -151,7 +151,7 @@ module.exports = {
       fullMessage += `${extraCommands.join('\n')}\n\n`;
     }
 
-    fullMessage += `--===[ 🌸 Type "help [command]" for more details 🌸 ]==--\n`;
+    fullMessage += `-==[ 🌸 Type "help [command]" for more details 🌸 ]==-\n`;
     fullMessage += `   Example: help ai to get the actual command usage\n`;
 
     await sendMessage(senderId, { text: fullMessage }, token);
