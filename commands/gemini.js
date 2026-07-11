@@ -43,12 +43,12 @@ module.exports = {
 
       let formattedResponse = aiResponse.trim();
       
-      formattedResponse = formattedResponse.replace(/\*\*(.+?)\*\*/g, '*$1*');
+      formattedResponse = formattedResponse.replace(/\*\*(.+?)\*\*/g, '$1');
       formattedResponse = formattedResponse.replace(/#{1,6}\s/g, '');
       formattedResponse = formattedResponse.replace(/---+/g, '');
       formattedResponse = formattedResponse.replace(/__/g, '');
       formattedResponse = formattedResponse.replace(/_/g, '');
-      formattedResponse = formattedResponse.replace(/\*{3,}/g, '**');
+      formattedResponse = formattedResponse.replace(/\*{1,}/g, '');
       formattedResponse = formattedResponse.replace(/[\u{1F000}-\u{1FFFF}]/gu, '');
       formattedResponse = formattedResponse.replace(/[\u{2600}-\u{27BF}]/gu, '');
       formattedResponse = formattedResponse.replace(/[\u{FE00}-\u{FEFF}]/gu, '');
