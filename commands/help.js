@@ -94,8 +94,8 @@ module.exports = {
       'System': ['help', 'commands', 'menu']
     };
 
-    let fullMessage = `\n`;
-    fullMessage += `---===[🌸 AVAILABLE COMMANDS NOW 🌸]===---\n`;
+    let fullMessage = `\n\n`;
+    fullMessage += `---====[🌸 AVAILABLE COMMANDS NOW 🌸]====---\n`;
     fullMessage += `\n\n`;
 
     // Build categorized list
@@ -142,8 +142,8 @@ module.exports = {
     }
 
     fullMessage += `\n`;
-    fullMessage += `🌸 Type "help [command]" for details 🌸\n`;
-    fullMessage += `   Example: help ai to get the actual usage\n`;
+    fullMessage += `🌸 Type "help [command]" for more details 🌸\n`;
+    fullMessage += `   Example: help ai to get the actual command usage\n`;
     fullMessage += ``;
 
     await sendMessage(senderId, { text: fullMessage }, token);
