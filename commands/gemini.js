@@ -38,7 +38,7 @@ module.exports = {
       console.log(`[gemini] Prompt: ${prompt}`);
 
       await sendMessage(senderId, {
-        text: 'Analyzing your image with Gemini AI...'
+        text: ''
       }, token);
 
       const encodedPrompt = encodeURIComponent(prompt);
