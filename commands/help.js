@@ -53,7 +53,7 @@ module.exports = {
 
       if (found) {
         const cmd = found.command;
-        let response = `━━━━━━━━━━━━━━━━━━━━\n`;
+        let response = `\n`;
         response += `📌 Command: ${Array.isArray(cmd.name) ? cmd.name.join(', ') : cmd.name}\n\n`;
         response += `📝 Description: ${cmd.description || 'No description'}\n`;
         response += `📖 Usage: ${cmd.usage || 'No usage info'}\n`;
@@ -75,7 +75,7 @@ module.exports = {
           response += `⏱️ Cooldown: ${cmd.cooldown}s\n`;
         }
         
-        response += `━━━━━━━━━━━━━━━━━━━━`;
+        response += ``;
         
         await sendMessage(senderId, { text: response }, token);
       } else {
@@ -94,9 +94,9 @@ module.exports = {
       'System': ['help', 'commands', 'menu']
     };
 
-    let fullMessage = `━━━━━━━━━━━━━━━━━━━━\n`;
-    fullMessage += `🤖 AVAILABLE COMMANDS\n`;
-    fullMessage += `━━━━━━━━━━━━━━━━━━━━\n\n`;
+    let fullMessage = `\n`;
+    fullMessage += `-==[ AVAILABLE COMMANDS NOW ]==-\n`;
+    fullMessage += `\n\n`;
 
     // Build categorized list
     for (const [category, cmdNames] of Object.entries(categories)) {
@@ -108,7 +108,7 @@ module.exports = {
           const cmd = found.command;
           const mainName = Array.isArray(cmd.name) ? cmd.name[0] : cmd.name;
           const desc = cmd.description || 'No description';
-          available.push(`  ▸ ${mainName} - ${desc.substring(0, 40)}${desc.length > 40 ? '...' : ''}`);
+          available.push(`  t ${mainName} - ${desc.substring(0, 40)}${desc.length > 40 ? '...' : ''}`);
         }
       }
 
@@ -132,7 +132,7 @@ module.exports = {
         const cmd = data.command;
         const mainName = Array.isArray(cmd.name) ? cmd.name[0] : cmd.name;
         const desc = cmd.description || 'No description';
-        extraCommands.push(`  ▸ ${mainName} - ${desc.substring(0, 40)}${desc.length > 40 ? '...' : ''}`);
+        extraCommands.push(`  ❀ ${mainName} - ${desc.substring(0, 40)}${desc.length > 40 ? '...' : ''}`);
       }
     }
 
@@ -141,10 +141,10 @@ module.exports = {
       fullMessage += `${extraCommands.join('\n')}\n\n`;
     }
 
-    fullMessage += `━━━━━━━━━━━━━━━━━━━━\n`;
-    fullMessage += `💡 Type "help [command]" for details\n`;
-    fullMessage += `   Example: help ai\n`;
-    fullMessage += `━━━━━━━━━━━━━━━━━━━━`;
+    fullMessage += `\n`;
+    fullMessage += `⋆.ೃ࿔🌸*:･ Type "help [command]" for more details\n`;
+    fullMessage += `   Example: help ai to know the actual usage of commands\n`;
+    fullMessage += ``;
 
     await sendMessage(senderId, { text: fullMessage }, token);
   }
