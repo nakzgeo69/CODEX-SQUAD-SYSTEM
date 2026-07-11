@@ -22,7 +22,7 @@ module.exports = {
 
       if (!imageUrl) {
         await sendMessage(senderId, { 
-          text: '❌| No image found. Please:\n1. Reply to an image\n2. Send an image\n3. Provide an image URL\n\nExample: enhance https://i.ibb.co/9jZcFqP/1773060358521.png' 
+          text: 'Please:\n1. Reply to an image\n2. Send an image\n3. Provide an image URL\n\nExample: enhance https://i.ibb.co/9jZcFqP/1773060358521.png' 
         }, token);
         return;
       }
@@ -31,7 +31,7 @@ module.exports = {
 
       // Send processing message
       await sendMessage(senderId, { 
-        text: '🔄| Enhancing image to 4K... Please wait a moment.' 
+        text: '' 
       }, token);
 
       // Make the API request
@@ -51,10 +51,8 @@ module.exports = {
         
         console.log(`[enhance] Enhanced image URL: ${enhancedUrl}`);
 
-        // ✅ FIXED: Send as SEPARATE messages
-        // 1. Success text
         await sendMessage(senderId, {
-          text: '✅| Here is your enhanced 4K image:'
+          text: ''
         }, token);
 
         // 2. Image attachment (SEND THIS BY ITSELF, NO TEXT)
@@ -68,13 +66,13 @@ module.exports = {
         // 3. Author credit
         if (data.author) {
           await sendMessage(senderId, {
-            text: `👤| Enhanced by: ${data.author}`
+            text: ``
           }, token);
         }
 
         // 4. Direct link
         await sendMessage(senderId, {
-          text: `🔗| Direct link: ${enhancedUrl}`
+          text: `${enhancedUrl}`
         }, token);
 
       } else {
