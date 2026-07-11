@@ -25,6 +25,8 @@ const apiCall = async (endpoint, data) => {
   return response.json();
 };
 
+
+
 const clearMenu = async () => {
   try {
     await fetch(`${GRAPH_API}/messenger_profile?access_token=${PAGE_ACCESS_TOKEN}&fields=persistent_menu,get_started`, {
