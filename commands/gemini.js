@@ -1,11 +1,11 @@
 const axios = require('axios');
-const { sendMessage } = require('../handles/sendMessage');
+const { sendMessage } = require('../handles/handleMessage');
 
 module.exports = {
   name: 'gemini',
   description: 'Chat with Gemini 2.5 Flash',
   usage: 'gemini [prompt]',
-  author: 'codex',
+  author: 'April Manalo',
 
   async execute(senderId, args, token, attachment) {
     let prompt = args.join(' ').trim();
@@ -30,6 +30,8 @@ module.exports = {
         const encodedImage = encodeURIComponent(imageUrl);
         apiUrl += `&imageurl=${encodedImage}`;
       }
+
+      console.log('API URL:', apiUrl);
 
       const response = await axios.get(apiUrl, {
         timeout: 30000
