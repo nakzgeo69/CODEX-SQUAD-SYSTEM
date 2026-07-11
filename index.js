@@ -1,92 +1,110 @@
-const { commandDescriptions, loadCommands } = require('../handles/commandHandler');
+const express = require('express');
+const { readFile, readdir, watch } = require('fs/promises');
+const { join, resolve } = require('path');
+const { handleMessage } = require('./handles/handleMessage');
+const { handlePostback } = require('./handles/handlePostback');
 
-let commands = {};
+const app = express();
+const VERIFY_TOKEN = 'pagebot';
+const COMMANDS_PATH = join(__dirname, 'commands');
+const GRAPH_API = 'https://graph.facebook.com/v23.0/me';
 
-const cooldowns = new Map();
-const COOLDOWN_SECONDS = 3;
+let PAGE_ACCESS_TOKEN;
 
-(async () => {
-  commands = await loadCommands();
-})();
+app.use(express.json({ limit: '10mb' }));
 
-async function handleMessage(event, pageAccessToken) {
-  const senderId = event.sender.id;
-  const message = event.message;
-  const text = message.text || '';
-  const args = text.trim().split(/\s+/);
-  const commandName = args.shift()?.toLowerCase();
+const loadToken = async () => PAGE_ACCESS_TOKEN = (await readFile('token.txt', 'utf8')).trim();
 
-  let attachment = null;
+const apiCall = async (endpoint, data) => {
+  const response = await fetch(`${GRAPH_API}${endpoint}?access_token=${PAGE_ACCESS_TOKEN}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data)
+  });
+  if (!response.ok) throw new Error(`API Error: ${response.status}`);
+  return response.json();
+};
+
+const clearMenu = async () => {
+  try {
+    await fetch(`${GRAPH_API}/messenger_profile?access_token=${PAGE_ACCESS_TOKEN}&fields=persistent_menu,get_started`, {
+      method: 'DELETE'
+    });
+  } catch (e) {
+    console.error('Menu clear warning:', e.message);
+  }
+};
+
+const setupMenu = async () => {
+  try {
+    await clearMenu();
+    
+    const menuItems = [{
+      type: 'postback',
+      title: 'Help',
+      payload: 'CMD_HELP'
+    }];
+    
+    await apiCall('/messenger_profile', {
+      get_started: { payload: 'GET_STARTED' },
+      persistent_menu: [{
+        locale: 'default',
+        composer_input_disabled: false,
+        call_to_actions: menuItems
+      }]
+    });
+
+    console.log(`✅ Menu set to Help only`);
+  } catch (e) {
+    console.error('❌ Menu setup failed:', e.message);
+  }
+};
+
+const startWatcher = async () => {
+  try {
+    const watcher = watch(COMMANDS_PATH);
+    for await (const { eventType, filename } of watcher) {
+      if (eventType === 'change' && filename?.endsWith('.js')) setupMenu();
+    }
+  } catch (e) {
+    console.error('Watcher error:', e.message);
+  }
+};
+
+app.get('/webhook', (req, res) => {
+  const { 'hub.mode': mode, 'hub.verify_token': token, 'hub.challenge': challenge } = req.query;
+  return mode === 'subscribe' && token === VERIFY_TOKEN 
+    ? (console.log('✅ Webhook verified'), res.status(200).send(challenge))
+    : res.sendStatus(403);
+});
+
+app.post('/webhook', (req, res) => {
+  if (req.body.object !== 'page') return res.sendStatus(404);
   
-  if (message.attachments && message.attachments.length > 0) {
-    const att = message.attachments[0];
-    if (att.type === 'image') {
-      attachment = {
-        type: 'image',
-        payload: {
-          url: att.payload.url
-        }
-      };
-    }
-  }
+  req.body.entry?.forEach(entry => 
+    entry.messaging?.forEach(event => {
+      if (event.message) handleMessage(event, PAGE_ACCESS_TOKEN);
+      else if (event.postback) handlePostback(event, PAGE_ACCESS_TOKEN);
+    })
+  );
+  
+  res.status(200).send('EVENT_RECEIVED');
+});
 
-  if (commandName === 'help' || commandName === 'commands' || commandName === 'menu') {
-    const descriptions = commandDescriptions();
-    const helpMessage = descriptions.length 
-      ? `╔══════════════════════════╗\n║  📜  AVAILABLE COMMANDS  ║\n╚══════════════════════════╝\n\n${descriptions.join('\n')}`
-      : 'No commands available.';
-    
-    await sendMessage(senderId, { text: helpMessage }, pageAccessToken);
-    return;
-  }
-
-  const command = commands[commandName];
-  if (!command) return;
-
-  const now = Date.now();
-  if (cooldowns.has(senderId)) {
-    const last = cooldowns.get(senderId);
-    if ((now - last) / 1000 < COOLDOWN_SECONDS) {
-      const remaining = Math.ceil(COOLDOWN_SECONDS - (now - last) / 1000);
-      await sendMessage(senderId, { 
-        text: `⏳ Please wait ${remaining} second(s) before using this command again.` 
-      }, pageAccessToken);
-      return;
-    }
-  }
-  cooldowns.set(senderId, now);
-
+const start = async () => {
   try {
-    await command.execute(senderId, args, pageAccessToken, attachment);
-  } catch (error) {
-    console.error(`Command error (${commandName}):`, error);
-    await sendMessage(senderId, { 
-      text: '⚠️ An error occurred while executing the command.' 
-    }, pageAccessToken);
-  }
-}
-
-async function sendMessage(recipientId, messageData, pageAccessToken) {
-  try {
-    const response = await fetch(
-      `https://graph.facebook.com/v23.0/me/messages?access_token=${pageAccessToken}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          recipient: { id: recipientId },
-          message: messageData
-        })
-      }
-    );
+    await loadToken();
+    const PORT = process.env.PORT || 3000;
     
-    if (!response.ok) {
-      const errorData = await response.json();
-      console.error('Facebook API Error:', errorData);
-    }
-  } catch (error) {
-    console.error('Send Message Error:', error);
+    app.listen(PORT, () => {
+      console.log(`🚀 Server running on port ${PORT}`);
+      setupMenu();
+      startWatcher();
+    });
+  } catch (e) {
+    console.error('Startup failed:', e.message);
+    process.exit(1);
   }
-}
+};
 
-module.exports = { handleMessage, sendMessage };
+start();
