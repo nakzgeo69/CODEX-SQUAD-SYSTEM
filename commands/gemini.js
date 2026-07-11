@@ -29,7 +29,7 @@ module.exports = {
 
       if (!imageUrl) {
         await sendMessage(senderId, {
-          text: 'Please provide an image. Usage:\n1. Send an image with caption: gemini [prompt]\n2. Reply to an image: gemini [prompt]\n3. Provide image URL: gemini [prompt] https://example.com/image.jpg'
+          text: 'Usage: gemini analyze this image https://i.ibb.co/KpYQJQKS/image.jpg'
         }, token);
         return;
       }
