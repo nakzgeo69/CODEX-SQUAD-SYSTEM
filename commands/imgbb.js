@@ -49,11 +49,11 @@ module.exports = {
         throw new Error('No image URL found in API response');
       }
 
-      let replyText = 'Upload Successful\n\n';
-      replyText += `Image Link: ${imageLink || viewerLink}\n`;
+      let replyText = '';
+      replyText += `${imageLink || viewerLink}\n`;
       
       if (imageLink && viewerLink && imageLink !== viewerLink) {
-        replyText += `Viewer Link: ${viewerLink}`;
+        replyText += `${viewerLink}`;
       }
 
       await sendMessage(senderId, {
