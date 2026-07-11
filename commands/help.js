@@ -22,38 +22,45 @@ module.exports = {
       }
     };
 
-    // Load all commands
-    const allCommands = [];
+    // Load all commands - use Set to avoid duplicates
     const commandMap = new Map();
+    const uniqueCommands = new Map(); // Track by main name only
     
     for (const file of commandFiles) {
       const cmd = loadCommand(file);
       if (cmd && cmd.name) {
         const names = Array.isArray(cmd.name) ? cmd.name : [cmd.name];
-        names.forEach(name => {
-          commandMap.set(name.toLowerCase(), {
+        const mainName = names[0].toLowerCase();
+        
+        // Only add if not already added
+        if (!uniqueCommands.has(mainName)) {
+          uniqueCommands.set(mainName, {
             file: file,
             command: cmd,
-            aliases: names.filter(n => n !== names[0])
+            mainName: mainName,
+            allNames: names.map(n => n.toLowerCase()),
+            aliases: names.slice(1).map(n => n.toLowerCase())
           });
-        });
-        allCommands.push({
-          file: file,
-          command: cmd,
-          mainName: Array.isArray(cmd.name) ? cmd.name[0] : cmd.name,
-          aliases: Array.isArray(cmd.name) ? cmd.name.slice(1) : []
-        });
+        }
       }
     }
 
     // If user asked for specific command
     if (args.length > 0) {
       const name = args[0].toLowerCase();
-      const found = commandMap.get(name);
+      let found = null;
+      
+      // Search in unique commands
+      for (const [key, data] of uniqueCommands) {
+        if (data.allNames.includes(name)) {
+          found = data;
+          break;
+        }
+      }
 
       if (found) {
         const cmd = found.command;
-        let response = `\n`;
+        let response = `\n\n`;
         response += `📌 Command: ${Array.isArray(cmd.name) ? cmd.name.join(', ') : cmd.name}\n\n`;
         response += `📝 Description: ${cmd.description || 'No description'}\n`;
         response += `📖 Usage: ${cmd.usage || 'No usage info'}\n`;
@@ -75,7 +82,7 @@ module.exports = {
           response += `⏱️ Cooldown: ${cmd.cooldown}s\n`;
         }
         
-        response += ``;
+        response += `\n`;
         
         await sendMessage(senderId, { text: response }, token);
       } else {
@@ -86,29 +93,29 @@ module.exports = {
       return;
     }
 
-    // Group commands by category
+    // Group commands by category - use unique commands only
     const categories = {
-      'AI & Chat': ['ai', 'gemini', 'gpt4'],
-      'Image Tools': ['enhance', 'removebg', 'imgbb'],
-      'Social Tools': ['share', 'smsbomb', 'smsbomber', 'bomb'],
-      'System': ['help', 'commands', 'menu']
+      'AI & Chat': ['ai', 'gemini', 'gpt4', 'codex', 'realtime', 'humanize'],
+      'Image Tools': ['enhance', 'removebg', 'imgbb', 'imagegen', 'generate'],
+      'Social Tools': ['share', 'smsbomb'],
+      'System': ['help']
     };
 
-    let fullMessage = `\n\n`;
-    fullMessage += `---====[🌸 AVAILABLE COMMANDS NOW 🌸]====---\n`;
-    fullMessage += `\n\n`;
+    let fullMessage = `\n---====[🌸 AVAILABLE COMMANDS NOW 🌸]====---\n\n`;
 
     // Build categorized list
     for (const [category, cmdNames] of Object.entries(categories)) {
       const available = [];
+      const addedNames = new Set(); // Track to avoid duplicates within category
       
       for (const cmdName of cmdNames) {
-        const found = commandMap.get(cmdName);
-        if (found) {
+        const found = uniqueCommands.get(cmdName);
+        if (found && !addedNames.has(cmdName)) {
           const cmd = found.command;
           const mainName = Array.isArray(cmd.name) ? cmd.name[0] : cmd.name;
           const desc = cmd.description || 'No description';
           available.push(`  ❀ ${mainName} - ${desc.substring(0, 40)}${desc.length > 40 ? '...' : ''}`);
+          addedNames.add(cmdName);
         }
       }
 
@@ -120,7 +127,9 @@ module.exports = {
 
     // Add extra commands not in categories
     const extraCommands = [];
-    for (const [cmdName, data] of commandMap) {
+    const addedExtra = new Set();
+    
+    for (const [cmdName, data] of uniqueCommands) {
       let foundInCategory = false;
       for (const category of Object.values(categories)) {
         if (category.includes(cmdName)) {
@@ -128,11 +137,12 @@ module.exports = {
           break;
         }
       }
-      if (!foundInCategory) {
+      if (!foundInCategory && !addedExtra.has(cmdName)) {
         const cmd = data.command;
         const mainName = Array.isArray(cmd.name) ? cmd.name[0] : cmd.name;
         const desc = cmd.description || 'No description';
         extraCommands.push(`  ❀ ${mainName} - ${desc.substring(0, 40)}${desc.length > 40 ? '...' : ''}`);
+        addedExtra.add(cmdName);
       }
     }
 
@@ -141,10 +151,8 @@ module.exports = {
       fullMessage += `${extraCommands.join('\n')}\n\n`;
     }
 
-    fullMessage += `\n`;
-    fullMessage += `🌸 Type "help [command]" for more details 🌸\n`;
+    fullMessage += `--===[ 🌸 Type "help [command]" for more details 🌸 ]==--\n`;
     fullMessage += `   Example: help ai to get the actual command usage\n`;
-    fullMessage += ``;
 
     await sendMessage(senderId, { text: fullMessage }, token);
   }
