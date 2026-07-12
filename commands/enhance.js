@@ -67,7 +67,7 @@ module.exports = {
 
         if (data.author) {
           await sendMessage(senderId, {
-            text: `${data.author}`
+            text: ``
           }, token);
         }
 
