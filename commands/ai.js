@@ -1,25 +1,27 @@
 const axios = require('axios');
 const { sendMessage } = require('../handles/sendMessage');
 
-// Move API_URL to the top for clarity
-const API_URL = 'https://yin-api.vercel.app/ai/chatgptfree';
+// Copilot API
+const API_URL = 'https://yin-api.vercel.app/ai/copilot';
 const MAX_CHUNK = 1900;
 
 module.exports = {
-  name: 'ai',
-  description: 'Chat with Teacher Arlene',
+  name: ['ai', 'copilot', 'ask'],
+  description: 'Chat with AI Copilot',
   usage: 'ai [message]',
-  author: '0xcodex',
+  version: '1.0.0',
+  author: 'codex',
+  category: 'AI',
+  cooldown: 3,
 
   async execute(senderId, args, token) {
     const prompt = args.join(' ').trim();
 
     // --- GREETING / HELP RESPONSE ---
-    // Return the "I'm Teacher Arlene" message for empty prompt, "help", or common greetings
     const greetingKeywords = [
       'hi', 'hello', 'hai', 'hey', 'greetings',
       'good morning', 'good afternoon', 'good evening',
-      'hola', 'howdy', 'sup', 'yo'
+      'hola', 'howdy', 'sup', 'yo', 'gm', 'gn'
     ];
 
     const isGreeting = !prompt ||
@@ -27,18 +29,16 @@ module.exports = {
                        greetingKeywords.some(word => prompt.toLowerCase() === word);
 
     if (isGreeting) {
-      const helpResponse = 'Likewise! By the way I\'m Teacher Arlene! Created by GeoDevz69. How can I assist you today?';
+      const helpResponse = '👋 Hello! I\'m Teacher Arlene from C0D3X SQUAD PENETRATORS. How can I assist you today?';
       await sendMessage(senderId, { text: helpResponse }, token);
       return;
     }
 
     // --- OWNER QUESTIONS ---
     const ownerKeywords = [
-      'who is your owner', 'who is your owner?', 'who owns you', 'who owns you?',
-      'who created you', 'who created you?', 'who made you', 'who made you?',
-      'sino gumawa sayo', 'sino gumawa sa iyo', 'sino gumawa', 'sino ang gumawa',
-      'sino may ari sayo', 'sino may ari sa iyo', 'sino owner mo', 'sino owner',
-      'owner mo', 'owner', 'creater', 'creator'
+      'who is your owner', 'who created you', 'who made you',
+      'sino gumawa sayo', 'sino may ari sayo', 'owner mo',
+      'sino owner mo', 'who owns you', 'creator', 'developer'
     ];
 
     const isOwnerQuestion = ownerKeywords.some(keyword =>
@@ -46,17 +46,16 @@ module.exports = {
     );
 
     if (isOwnerQuestion) {
-      const ownerResponse = 'Wow! Nice question, well my boss GeoDevz69 created me, you can contact him with this link below.\n\nhttps://www.facebook.com/geotechph.net';
+      const ownerResponse = 'I was created by GeoDevz69. For more info, visit: https://www.facebook.com/geotechph.net';
       await sendMessage(senderId, { text: ownerResponse }, token);
       return;
     }
 
-    // --- USER INFO QUESTIONS (name, birthday, etc.) ---
+    // --- USER INFO QUESTIONS ---
     const userInfoKeywords = [
       'what is my name', 'ano pangalan ko', 'my name', 'pangalan ko',
-      'whats my name', 'what\'s my name',
-      'when is my birthday', 'kelan birthday ko', 'my birthday', 'birthday ko',
-      'who am i', 'sino ako'
+      'when is my birthday', 'kelan birthday ko', 'my birthday',
+      'who am i', 'sino ako', 'whats my name'
     ];
 
     const isUserInfoQuestion = userInfoKeywords.some(keyword =>
@@ -66,23 +65,15 @@ module.exports = {
     if (isUserInfoQuestion) {
       try {
         const userInfo = await getUserInfo(senderId, token);
-
         let response = '';
 
         if (prompt.toLowerCase().includes('name') || prompt.toLowerCase().includes('pangalan')) {
-          if (userInfo.name) {
-            response = `Your name is ${userInfo.name}.`;
-          } else {
-            response = 'I can\'t tell you about that because it\'s confidential.';
-          }
+          response = userInfo.name ? `Your name is ${userInfo.name}.` : 'I can\'t tell you about that because it\'s confidential.';
         }
 
-        if (prompt.toLowerCase().includes('birthday') || prompt.toLowerCase().includes('birth') || prompt.toLowerCase().includes('kelan')) {
-          if (userInfo.birthday) {
-            response += `\nYour birthday is ${userInfo.birthday}.`;
-          } else {
-            response += '\nI can\'t tell you about that because it\'s confidential.';
-          }
+        if (prompt.toLowerCase().includes('birthday') || prompt.toLowerCase().includes('kelan')) {
+          const birthdayMsg = userInfo.birthday ? `\nYour birthday is ${userInfo.birthday}.` : '\nI can\'t tell you about that because it\'s confidential.';
+          response += birthdayMsg;
         }
 
         if (!response) {
@@ -92,76 +83,122 @@ module.exports = {
           if (userInfo.gender) publicInfo.push(`Gender: ${userInfo.gender}`);
           if (userInfo.location) publicInfo.push(`Location: ${userInfo.location}`);
 
-          if (publicInfo.length > 0) {
-            response = `Here is your public information:\n${publicInfo.join('\n')}`;
-          } else {
-            response = 'I can\'t tell you about that because it\'s confidential.';
-          }
+          response = publicInfo.length > 0 
+            ? `Here is your public information:\n${publicInfo.join('\n')}`
+            : 'I can\'t tell you about that because it\'s confidential.';
         }
 
         await sendMessage(senderId, { text: response }, token);
         return;
-
       } catch (error) {
         console.error(`[User Info] Failed: ${error.message}`);
         await sendMessage(senderId, {
-          text: 'Please try again after 15.0s.'
+          text: 'Error fetching user info. Please try again later.'
         }, token);
         return;
       }
     }
 
-    // --- GENERAL AI QUERY (using API) ---
+    // --- GENERAL AI QUERY (using Copilot API) ---
     try {
+      console.log('[ai] Sending prompt:', prompt);
+      
       const { data } = await axios.get(API_URL, {
         params: {
           prompt: prompt,
-          model: 'chatgpt4'
+          model: 'copilot'
         },
-        timeout: 15000
+        timeout: 30000,
+        headers: {
+          'Accept': 'application/json'
+        }
       });
 
-      if (!data?.answer) {
-        throw new Error('Invalid API response');
+      console.log('[ai] API Response:', data);
+
+      // Check different response formats
+      let aiResponse = null;
+      if (data?.response) {
+        aiResponse = data.response;
+      } else if (data?.answer) {
+        aiResponse = data.answer;
+      } else if (data?.result) {
+        aiResponse = data.result;
+      } else if (data?.message) {
+        aiResponse = data.message;
+      } else if (typeof data === 'string') {
+        aiResponse = data;
+      } else if (data && typeof data === 'object') {
+        aiResponse = JSON.stringify(data, null, 2);
       }
 
-      let aiResponse = data.answer.trim();
+      if (!aiResponse) {
+        throw new Error('Invalid API response format');
+      }
 
-      // Formatting: convert **bold** to *bold* (Messenger style)
-      aiResponse = aiResponse.replace(/\*\*(.+?)\*\*/g, '*$1*');
-      aiResponse = aiResponse.replace(/\*/g, '');
-      aiResponse = aiResponse.replace(/#{1,6}\s/g, '');
-      aiResponse = aiResponse.replace(/---+/g, '');
-      aiResponse = aiResponse.replace(/__/g, '');
-      aiResponse = aiResponse.replace(/_/g, '');
-
-      // Remove emojis
-      aiResponse = aiResponse.replace(/[\u{1F000}-\u{1FFFF}]/gu, '');
-      aiResponse = aiResponse.replace(/[\u{2600}-\u{27BF}]/gu, '');
-      aiResponse = aiResponse.replace(/[\u{FE00}-\u{FEFF}]/gu, '');
-
-      // Clean up extra whitespace
-      aiResponse = aiResponse.replace(/\n{3,}/g, '\n\n');
-      aiResponse = aiResponse.replace(/[ \t]+/g, ' ');
-      aiResponse = aiResponse.trim();
+      // Clean up the response
+      aiResponse = cleanResponse(aiResponse);
 
       await sendChunks(senderId, aiResponse, token);
 
     } catch (error) {
-      const reason = error.response
-        ? `API error ${error.response.status}`
-        : error.message ?? 'Unknown error';
+      console.error('[ai] Error:', {
+        message: error.message,
+        response: error.response?.data,
+        status: error.response?.status
+      });
 
-      console.error(`[ai] Failed for sender ${senderId}: ${reason}`);
+      let errorMessage = 'Server error. Please try again later.';
+
+      if (error.response?.status === 429) {
+        errorMessage = 'Rate limit exceeded. Please wait a moment.';
+      } else if (error.response?.status === 403) {
+        errorMessage = 'API key invalid or expired.';
+      } else if (error.response?.status === 500) {
+        errorMessage = 'Server error. Please try again later.';
+      } else if (error.code === 'ECONNABORTED') {
+        errorMessage = 'Request timeout. Please try again.';
+      }
+
       await sendMessage(senderId, {
-        text: 'Server error. Please try again later.'
+        text: errorMessage
       }, token);
     }
   }
 };
 
-// --- HELPER FUNCTIONS ---
+// --- CLEAN RESPONSE ---
+function cleanResponse(text) {
+  if (!text) return 'No response.';
+  
+  let cleaned = text.trim();
+  
+  // Convert **bold** to *bold* (Messenger style)
+  cleaned = cleaned.replace(/\*\*(.+?)\*\*/g, '*$1*');
+  
+  // Remove single asterisks
+  cleaned = cleaned.replace(/\*(?!\*)(.+?)(?<!\*)\*/g, '$1');
+  
+  // Remove markdown
+  cleaned = cleaned.replace(/#{1,6}\s/g, '');
+  cleaned = cleaned.replace(/---+/g, '');
+  cleaned = cleaned.replace(/__/g, '');
+  cleaned = cleaned.replace(/_/g, '');
+  
+  // Remove excessive emojis (keep some)
+  cleaned = cleaned.replace(/[\u{1F000}-\u{1FFFF}]/gu, '');
+  cleaned = cleaned.replace(/[\u{2600}-\u{27BF}]/gu, '');
+  cleaned = cleaned.replace(/[\u{FE00}-\u{FEFF}]/gu, '');
+  
+  // Clean up extra whitespace
+  cleaned = cleaned.replace(/\n{3,}/g, '\n\n');
+  cleaned = cleaned.replace(/[ \t]+/g, ' ');
+  cleaned = cleaned.trim();
+  
+  return cleaned || 'No response.';
+}
 
+// --- GET USER INFO ---
 async function getUserInfo(senderId, token) {
   try {
     const url = `https://graph.facebook.com/${senderId}`;
@@ -188,6 +225,7 @@ async function getUserInfo(senderId, token) {
   }
 }
 
+// --- SPLIT MESSAGE ---
 function splitMessage(text) {
   const chunks = [];
   for (let i = 0; i < text.length; i += MAX_CHUNK) {
@@ -196,6 +234,7 @@ function splitMessage(text) {
   return chunks;
 }
 
+// --- SEND CHUNKS ---
 async function sendChunks(senderId, text, token) {
   const chunks = splitMessage(text);
   for (let i = 0; i < chunks.length; i++) {
