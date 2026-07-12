@@ -9,7 +9,7 @@ module.exports = {
   description: 'Chat with Opera AI',
   usage: 'ai [message]',
   version: '1.0.0',
-  author: 'AutoPageBot',
+  author: 'codex',
   category: 'AI',
   cooldown: 3,
 
@@ -27,7 +27,7 @@ module.exports = {
                        greetingKeywords.some(word => prompt.toLowerCase() === word);
 
     if (isGreeting) {
-      const helpResponse = 'Hello. I am Teacher Arlene from C0D3X SQU4D PENETRATORS may your AI Assistant. How can I assist you today?';
+      const helpResponse = 'Hello. I am Teacher Arlene from C0D3X SQU4D PENETRATORS, your AI Assistant. How can I assist you today?';
       await sendMessage(senderId, { text: helpResponse }, token);
       return;
     }
@@ -43,7 +43,7 @@ module.exports = {
     );
 
     if (isOwnerQuestion) {
-      const ownerResponse = 'I was created by GeoDevz69 visit here for more clarifications.\nhttps://www.facebook.com/geotechph.net.';
+      const ownerResponse = 'I was created by GeoDevz69. Visit here for more clarifications:\nhttps://www.facebook.com/geotechph.net';
       await sendMessage(senderId, { text: ownerResponse }, token);
       return;
     }
@@ -119,14 +119,6 @@ module.exports = {
 
       await sendChunks(senderId, aiResponse, token);
 
-      if (data.follow_up_questions && data.follow_up_questions.length > 0) {
-        let followUpText = '\n\nFollow-up questions you can ask:\n';
-        for (const q of data.follow_up_questions) {
-          followUpText += `  - ${q}\n`;
-        }
-        await sendMessage(senderId, { text: followUpText }, token);
-      }
-
     } catch (error) {
       console.error('[ai] Error:', {
         message: error.message,
@@ -156,14 +148,34 @@ function cleanResponse(text) {
 
   let cleaned = text.trim();
 
-  cleaned = cleaned.replace(/\*\*(.+?)\*\*/g, '*$1*');
-  cleaned = cleaned.replace(/\*(?!\*)(.+?)(?<!\*)\*/g, '$1');
-  cleaned = cleaned.replace(/#{1,6}\s/g, '');
+  cleaned = cleaned.replace(/\*\*(.+?)\*\*/g, '$1');
+  cleaned = cleaned.replace(/\*(.+?)\*/g, '$1');
+  cleaned = cleaned.replace(/#{1,6}\s*/g, '');
   cleaned = cleaned.replace(/---+/g, '');
   cleaned = cleaned.replace(/__/g, '');
   cleaned = cleaned.replace(/_/g, '');
+  cleaned = cleaned.replace(/`/g, '');
+  cleaned = cleaned.replace(/```/g, '');
+  cleaned = cleaned.replace(/~~/g, '');
+  cleaned = cleaned.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');
   cleaned = cleaned.replace(/\n{3,}/g, '\n\n');
   cleaned = cleaned.replace(/[ \t]+/g, ' ');
+  
+  cleaned = cleaned.replace(/[\u{1F000}-\u{1FFFF}]/gu, '');
+  cleaned = cleaned.replace(/[\u{2600}-\u{27BF}]/gu, '');
+  cleaned = cleaned.replace(/[\u{FE00}-\u{FEFF}]/gu, '');
+  cleaned = cleaned.replace(/[\u{1F600}-\u{1F64F}]/gu, '');
+  cleaned = cleaned.replace(/[\u{1F300}-\u{1F5FF}]/gu, '');
+  cleaned = cleaned.replace(/[\u{1F680}-\u{1F6FF}]/gu, '');
+  cleaned = cleaned.replace(/[\u{1F700}-\u{1F77F}]/gu, '');
+  cleaned = cleaned.replace(/[\u{1F780}-\u{1F7FF}]/gu, '');
+  cleaned = cleaned.replace(/[\u{1F800}-\u{1F8FF}]/gu, '');
+  cleaned = cleaned.replace(/[\u{1F900}-\u{1F9FF}]/gu, '');
+  cleaned = cleaned.replace(/[\u{1FA00}-\u{1FA6F}]/gu, '');
+  cleaned = cleaned.replace(/[\u{1FA70}-\u{1FAFF}]/gu, '');
+  cleaned = cleaned.replace(/[\u{2700}-\u{27BF}]/gu, '');
+  cleaned = cleaned.replace(/[\u{24C2}-\u{1F251}]/gu, '');
+
   cleaned = cleaned.trim();
 
   return cleaned || 'No response.';
