@@ -24,7 +24,7 @@ module.exports = {
 
     const query = args.join(' ');
     await sendMessage(senderId, {
-      text: ``
+      text: `Searching "${query}"...`
     }, token);
 
     try {
@@ -64,7 +64,11 @@ module.exports = {
         let authors = 'Unknown';
         let venue = 'Unknown';
         let year = 'Unknown';
+        let volume = '';
+        let issue = '';
+        let pages = '';
         
+        // Extract from publication_info
         if (paper.publication_info?.summary) {
           const summary = paper.publication_info.summary;
           
@@ -87,12 +91,55 @@ module.exports = {
           }
         }
 
-        // Extract volume, issue, pages from snippet
-        const publicationInfo = paper.publication_info?.summary || '';
-        const details = extractDetails(snippet, publicationInfo);
-        const volume = details.volume;
-        const issue = details.issue;
-        const pages = details.pages;
+        // Extract volume, issue, pages from snippet using multiple patterns
+        const text = `${snippet} ${paper.publication_info?.summary || ''}`;
+        
+        // Volume patterns
+        const volumePatterns = [
+          /vol\.?\s*(\d+)/i,
+          /volume\s*(\d+)/i,
+          /v\.\s*(\d+)/i,
+          /(\d+)\s*\(/  // Volume followed by issue in parentheses
+        ];
+        for (const pattern of volumePatterns) {
+          const match = text.match(pattern);
+          if (match) {
+            volume = match[1];
+            break;
+          }
+        }
+        
+        // Issue patterns
+        const issuePatterns = [
+          /no\.?\s*(\d+)/i,
+          /issue\s*(\d+)/i,
+          /\((\d+)\)/  // Issue in parentheses
+        ];
+        for (const pattern of issuePatterns) {
+          const match = text.match(pattern);
+          if (match && match[1] !== volume) {
+            issue = match[1];
+            break;
+          }
+        }
+        
+        // Pages patterns
+        const pagePatterns = [
+          /pp\.?\s*(\d+-\d+)/i,
+          /pages?\s*(\d+-\d+)/i,
+          /(\d+-\d+)\s*pp/i,
+          /(\d+-\d+)\s*\(/i,
+          /:\s*(\d+-\d+)/i
+        ];
+        for (const pattern of pagePatterns) {
+          const match = text.match(pattern);
+          if (match) {
+            pages = match[1];
+            if (pages && pages.includes('-')) {
+              break;
+            }
+          }
+        }
 
         // Auto-fetch DOI from CrossRef
         let doi = await fetchDOIFromCrossRef(title, authors, year);
@@ -100,6 +147,18 @@ module.exports = {
         // If no DOI from CrossRef, try to extract from link
         if (!doi) {
           doi = extractDOIFromLink(scholarLink);
+        }
+
+        // If still no DOI, try to get complete metadata from CrossRef using DOI from link
+        if (doi) {
+          const metadata = await getCompleteMetadata(doi);
+          if (metadata) {
+            if (!volume && metadata.volume) volume = metadata.volume;
+            if (!issue && metadata.issue) issue = metadata.issue;
+            if (!pages && metadata.pages) pages = metadata.pages;
+            if (venue === 'Unknown' && metadata.journal) venue = metadata.journal;
+            if (year === 'Unknown' && metadata.year) year = metadata.year;
+          }
         }
 
         // Format authors for display
@@ -164,73 +223,6 @@ module.exports = {
     }
   }
 };
-
-// --- EXTRACT VOLUME, ISSUE, PAGES ---
-function extractDetails(snippet, publicationInfo) {
-  let volume = '';
-  let issue = '';
-  let pages = '';
-  
-  // Combine snippet and publication info for better matching
-  const text = `${snippet} ${publicationInfo || ''}`;
-  
-  // Extract Volume - multiple patterns
-  const volumePatterns = [
-    /vol\.?\s*(\d+)/i,
-    /volume\s*(\d+)/i,
-    /v\.\s*(\d+)/i,
-    /(\d+)\s*\(/  // Volume followed by issue in parentheses
-  ];
-  
-  for (const pattern of volumePatterns) {
-    const match = text.match(pattern);
-    if (match) {
-      volume = match[1];
-      break;
-    }
-  }
-  
-  // Extract Issue
-  const issuePatterns = [
-    /no\.?\s*(\d+)/i,
-    /issue\s*(\d+)/i,
-    /\((\d+)\)/  // Issue in parentheses
-  ];
-  
-  for (const pattern of issuePatterns) {
-    const match = text.match(pattern);
-    if (match && match[1] !== volume) {
-      issue = match[1];
-      break;
-    }
-  }
-  
-  // Extract Pages
-  const pagePatterns = [
-    /pp\.?\s*(\d+-\d+)/i,
-    /pages?\s*(\d+-\d+)/i,
-    /(\d+-\d+)\s*pp/i,
-    /(\d+-\d+)\s*\(/i,
-    /:\s*(\d+-\d+)/i,
-    /(\d+)\s*-\s*(\d+)/
-  ];
-  
-  for (const pattern of pagePatterns) {
-    const match = text.match(pattern);
-    if (match) {
-      if (match[1] && match[2]) {
-        pages = `${match[1]}-${match[2]}`;
-      } else if (match[1]) {
-        pages = match[1];
-      }
-      if (pages && pages.includes('-')) {
-        break;
-      }
-    }
-  }
-  
-  return { volume, issue, pages };
-}
 
 // --- FORMAT AUTHORS FOR DISPLAY ---
 function formatAuthorsDisplay(authors) {
@@ -313,6 +305,35 @@ function extractDOIFromLink(link) {
     return `https://doi.org/${wileyMatch[1]}`;
   }
   
+  return null;
+}
+
+// --- GET COMPLETE METADATA FROM CROSSREF USING DOI ---
+async function getCompleteMetadata(doi) {
+  try {
+    const doiClean = doi.replace('https://doi.org/', '');
+    const url = `https://api.crossref.org/works/${doiClean}`;
+    console.log('[Crossref] Fetching metadata:', url);
+    
+    const response = await axios.get(url, {
+      timeout: 10000,
+      headers: { 'User-Agent': 'AcademicBot/1.0' }
+    });
+
+    const data = response.data?.message;
+    if (data) {
+      const volume = data.volume || '';
+      const issue = data.issue || '';
+      const pages = data.page || '';
+      const journal = data['container-title']?.[0] || '';
+      const year = data.issued?.['date-parts']?.[0]?.[0] || '';
+      
+      console.log('[Crossref] Metadata:', { volume, issue, pages, journal, year });
+      return { volume, issue, pages, journal, year };
+    }
+  } catch (error) {
+    console.error('[Crossref] Error:', error.message);
+  }
   return null;
 }
 
