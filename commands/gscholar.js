@@ -200,7 +200,7 @@ module.exports = {
 
       // Final summary
       await sendMessage(senderId, {
-        text: `Search Complete!\n\nQuery: ${query}\nFound: ${results.length} papers\nSource: Google Scholar (via SerpApi)`
+        text: `Search Complete!\n\nQuery: ${query}\nFound: ${results.length} papers\nSource: Google Scholar Website`
       }, token);
 
     } catch (error) {
