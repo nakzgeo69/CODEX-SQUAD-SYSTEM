@@ -21,7 +21,7 @@ module.exports = {
 Usage: googlemap [from] | [to]
 
 Examples:
-  googlemap San Pedro, Alegria, Surigao del Norte | Surigao City
+  googlemap Your Barangay where you started, and your Province | Ended Barangay, Province 
   googlemap Manila | Quezon City
   googlemap Davao City | Cagayan de Oro
 
