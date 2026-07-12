@@ -1,7 +1,6 @@
 const axios = require('axios');
 const { sendMessage } = require('../handles/sendMessage');
 
-// Your SerpApi Key
 const SERPAPI_KEY = '96a606904519013f159fa59fca23892e38a305ea97159d1b2a77ea71364f9709';
 
 module.exports = {
@@ -27,12 +26,10 @@ Examples:
 
 Features:
   ✓ Real-time Google Scholar results
-  ✓ Accurate and relevant papers
+  ✓ Google Scholar links (viewable)
   ✓ MLA & APA citations
-  ✓ Verified viewable URLs
   ✓ Cited by count
-
-Note: Free tier = 250 searches/month`
+  ✓ Exact research papers`
       }, token);
       return;
     }
@@ -69,9 +66,24 @@ Note: Free tier = 250 searches/month`
         
         const title = paper.title || 'No title';
         const snippet = paper.snippet || 'No abstract available';
-        const link = paper.link || '';
         const citedBy = paper.inline_links?.cited_by?.total || '0';
         
+        // Extract the Google Scholar link (not the external link)
+        let scholarLink = '';
+        if (paper.link) {
+          scholarLink = paper.link;
+        }
+        
+        // If no link, use the redirect link
+        if (!scholarLink && paper.redirect_link) {
+          scholarLink = paper.redirect_link;
+        }
+        
+        // If still no link, construct a Google Scholar search link
+        if (!scholarLink) {
+          scholarLink = `https://scholar.google.com/scholar?q=${encodeURIComponent(title)}`;
+        }
+
         let authors = 'Unknown';
         let venue = 'Unknown';
         let year = 'Unknown';
@@ -95,8 +107,8 @@ Note: Free tier = 250 searches/month`
           }
         }
 
-        const mlaCitation = generateMLA(title, authors, venue, year, link);
-        const apaCitation = generateAPA(title, authors, venue, year, link);
+        const mlaCitation = generateMLA(title, authors, venue, year, scholarLink);
+        const apaCitation = generateAPA(title, authors, venue, year, scholarLink);
 
         let message = `📄 ${i + 1}. ${title}\n\n`;
         message += `👤 Authors: ${authors}\n`;
@@ -106,8 +118,8 @@ Note: Free tier = 250 searches/month`
           message += `📊 Cited by: ${citedBy}\n`;
         }
         message += `📝 Abstract: ${snippet}\n\n`;
-        if (link) {
-          message += `🔗 View Paper: ${link}\n\n`;
+        if (scholarLink) {
+          message += `🔗 Google Scholar: ${scholarLink}\n\n`;
         }
         message += `\n`;
         message += `📝 MLA Citation:\n${mlaCitation}\n\n`;
