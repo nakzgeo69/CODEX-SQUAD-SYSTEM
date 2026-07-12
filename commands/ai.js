@@ -1,23 +1,21 @@
 const axios = require('axios');
 const { sendMessage } = require('../handles/sendMessage');
 
-// Copilot API
-const API_URL = 'https://yin-api.vercel.app/ai/copilot';
+const API_URL = 'https://betadash-api-swordslush-production.up.railway.app/opera';
 const MAX_CHUNK = 1900;
 
 module.exports = {
-  name: ['ai', 'copilot', 'ask'],
-  description: 'Chat with AI Copilot',
+  name: ['ai', 'opera', 'ask'],
+  description: 'Chat with Opera AI',
   usage: 'ai [message]',
   version: '1.0.0',
-  author: 'codex',
+  author: 'AutoPageBot',
   category: 'AI',
   cooldown: 3,
 
   async execute(senderId, args, token) {
     const prompt = args.join(' ').trim();
 
-    // --- GREETING / HELP RESPONSE ---
     const greetingKeywords = [
       'hi', 'hello', 'hai', 'hey', 'greetings',
       'good morning', 'good afternoon', 'good evening',
@@ -29,12 +27,11 @@ module.exports = {
                        greetingKeywords.some(word => prompt.toLowerCase() === word);
 
     if (isGreeting) {
-      const helpResponse = '👋 Hello! I\'m Teacher Arlene from C0D3X SQUAD PENETRATORS. How can I assist you today?';
+      const helpResponse = 'Hello. I am Teacher Arlene from C0D3X SQU4D PENETRATORS may your AI Assistant. How can I assist you today?';
       await sendMessage(senderId, { text: helpResponse }, token);
       return;
     }
 
-    // --- OWNER QUESTIONS ---
     const ownerKeywords = [
       'who is your owner', 'who created you', 'who made you',
       'sino gumawa sayo', 'sino may ari sayo', 'owner mo',
@@ -46,12 +43,11 @@ module.exports = {
     );
 
     if (isOwnerQuestion) {
-      const ownerResponse = 'I was created by GeoDevz69. For more info, visit: https://www.facebook.com/geotechph.net';
+      const ownerResponse = 'I was created by GeoDevz69 visit here for more clarifications.\nhttps://www.facebook.com/geotechph.net.';
       await sendMessage(senderId, { text: ownerResponse }, token);
       return;
     }
 
-    // --- USER INFO QUESTIONS ---
     const userInfoKeywords = [
       'what is my name', 'ano pangalan ko', 'my name', 'pangalan ko',
       'when is my birthday', 'kelan birthday ko', 'my birthday',
@@ -68,11 +64,11 @@ module.exports = {
         let response = '';
 
         if (prompt.toLowerCase().includes('name') || prompt.toLowerCase().includes('pangalan')) {
-          response = userInfo.name ? `Your name is ${userInfo.name}.` : 'I can\'t tell you about that because it\'s confidential.';
+          response = userInfo.name ? `Your name is ${userInfo.name}.` : 'I cannot tell you that because it is confidential.';
         }
 
         if (prompt.toLowerCase().includes('birthday') || prompt.toLowerCase().includes('kelan')) {
-          const birthdayMsg = userInfo.birthday ? `\nYour birthday is ${userInfo.birthday}.` : '\nI can\'t tell you about that because it\'s confidential.';
+          const birthdayMsg = userInfo.birthday ? `\nYour birthday is ${userInfo.birthday}.` : '\nI cannot tell you that because it is confidential.';
           response += birthdayMsg;
         }
 
@@ -83,15 +79,15 @@ module.exports = {
           if (userInfo.gender) publicInfo.push(`Gender: ${userInfo.gender}`);
           if (userInfo.location) publicInfo.push(`Location: ${userInfo.location}`);
 
-          response = publicInfo.length > 0 
+          response = publicInfo.length > 0
             ? `Here is your public information:\n${publicInfo.join('\n')}`
-            : 'I can\'t tell you about that because it\'s confidential.';
+            : 'I cannot tell you that because it is confidential.';
         }
 
         await sendMessage(senderId, { text: response }, token);
         return;
       } catch (error) {
-        console.error(`[User Info] Failed: ${error.message}`);
+        console.error('[User Info] Failed:', error.message);
         await sendMessage(senderId, {
           text: 'Error fetching user info. Please try again later.'
         }, token);
@@ -99,15 +95,13 @@ module.exports = {
       }
     }
 
-    // --- GENERAL AI QUERY (using Copilot API) ---
     try {
       console.log('[ai] Sending prompt:', prompt);
-      
-      const { data } = await axios.get(API_URL, {
-        params: {
-          prompt: prompt,
-          model: 'copilot'
-        },
+
+      const encodedPrompt = encodeURIComponent(prompt);
+      const apiUrl = `${API_URL}?ask=${encodedPrompt}`;
+
+      const { data } = await axios.get(apiUrl, {
         timeout: 30000,
         headers: {
           'Accept': 'application/json'
@@ -116,30 +110,22 @@ module.exports = {
 
       console.log('[ai] API Response:', data);
 
-      // Check different response formats
-      let aiResponse = null;
-      if (data?.response) {
-        aiResponse = data.response;
-      } else if (data?.answer) {
-        aiResponse = data.answer;
-      } else if (data?.result) {
-        aiResponse = data.result;
-      } else if (data?.message) {
-        aiResponse = data.message;
-      } else if (typeof data === 'string') {
-        aiResponse = data;
-      } else if (data && typeof data === 'object') {
-        aiResponse = JSON.stringify(data, null, 2);
+      if (!data?.success) {
+        throw new Error(data?.message || 'API returned error');
       }
 
-      if (!aiResponse) {
-        throw new Error('Invalid API response format');
-      }
-
-      // Clean up the response
+      let aiResponse = data.message || 'No response from API.';
       aiResponse = cleanResponse(aiResponse);
 
       await sendChunks(senderId, aiResponse, token);
+
+      if (data.follow_up_questions && data.follow_up_questions.length > 0) {
+        let followUpText = '\n\nFollow-up questions you can ask:\n';
+        for (const q of data.follow_up_questions) {
+          followUpText += `  - ${q}\n`;
+        }
+        await sendMessage(senderId, { text: followUpText }, token);
+      }
 
     } catch (error) {
       console.error('[ai] Error:', {
@@ -154,8 +140,6 @@ module.exports = {
         errorMessage = 'Rate limit exceeded. Please wait a moment.';
       } else if (error.response?.status === 403) {
         errorMessage = 'API key invalid or expired.';
-      } else if (error.response?.status === 500) {
-        errorMessage = 'Server error. Please try again later.';
       } else if (error.code === 'ECONNABORTED') {
         errorMessage = 'Request timeout. Please try again.';
       }
@@ -167,38 +151,24 @@ module.exports = {
   }
 };
 
-// --- CLEAN RESPONSE ---
 function cleanResponse(text) {
   if (!text) return 'No response.';
-  
+
   let cleaned = text.trim();
-  
-  // Convert **bold** to *bold* (Messenger style)
+
   cleaned = cleaned.replace(/\*\*(.+?)\*\*/g, '*$1*');
-  
-  // Remove single asterisks
   cleaned = cleaned.replace(/\*(?!\*)(.+?)(?<!\*)\*/g, '$1');
-  
-  // Remove markdown
   cleaned = cleaned.replace(/#{1,6}\s/g, '');
   cleaned = cleaned.replace(/---+/g, '');
   cleaned = cleaned.replace(/__/g, '');
   cleaned = cleaned.replace(/_/g, '');
-  
-  // Remove excessive emojis (keep some)
-  cleaned = cleaned.replace(/[\u{1F000}-\u{1FFFF}]/gu, '');
-  cleaned = cleaned.replace(/[\u{2600}-\u{27BF}]/gu, '');
-  cleaned = cleaned.replace(/[\u{FE00}-\u{FEFF}]/gu, '');
-  
-  // Clean up extra whitespace
   cleaned = cleaned.replace(/\n{3,}/g, '\n\n');
   cleaned = cleaned.replace(/[ \t]+/g, ' ');
   cleaned = cleaned.trim();
-  
+
   return cleaned || 'No response.';
 }
 
-// --- GET USER INFO ---
 async function getUserInfo(senderId, token) {
   try {
     const url = `https://graph.facebook.com/${senderId}`;
@@ -220,12 +190,11 @@ async function getUserInfo(senderId, token) {
       email: data.email || null
     };
   } catch (error) {
-    console.error(`[Graph API] Error: ${error.message}`);
+    console.error('[Graph API] Error:', error.message);
     return {};
   }
 }
 
-// --- SPLIT MESSAGE ---
 function splitMessage(text) {
   const chunks = [];
   for (let i = 0; i < text.length; i += MAX_CHUNK) {
@@ -234,7 +203,6 @@ function splitMessage(text) {
   return chunks;
 }
 
-// --- SEND CHUNKS ---
 async function sendChunks(senderId, text, token) {
   const chunks = splitMessage(text);
   for (let i = 0; i < chunks.length; i++) {
