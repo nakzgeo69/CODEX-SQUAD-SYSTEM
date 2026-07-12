@@ -7,7 +7,10 @@ module.exports = {
   name: 'enhance',
   description: 'Enhance images to 4K resolution using Remini.',
   usage: 'enhance [reply to an image or send image URL]',
-  author: 'GeoDevz69',
+  version: '1.0.0',
+  author: 'codex',
+  category: 'image',
+  cooldown: 10,
 
   async execute(senderId, args, token, event) {
     try {
@@ -21,20 +24,18 @@ module.exports = {
       }
 
       if (!imageUrl) {
-        await sendMessage(senderId, { 
-          text: 'Please:\n1. Reply to an image\n2. Send an image\n3. Provide an image URL\n\nExample: enhance https://i.ibb.co/9jZcFqP/1773060358521.png' 
+        await sendMessage(senderId, {
+          text: 'Usage : enhance https://i.ibb.co/9jZcFqP/1773060358521.png'
         }, token);
         return;
       }
 
       console.log(`[enhance] Processing image: ${imageUrl}`);
 
-      // Send processing message
-      await sendMessage(senderId, { 
-        text: '' 
+      await sendMessage(senderId, {
+        text: ''
       }, token);
 
-      // Make the API request
       const response = await axios.get(`${API_URL}?imageUrl=${encodeURIComponent(imageUrl)}`, {
         timeout: 30000,
         headers: {
@@ -42,20 +43,16 @@ module.exports = {
         }
       });
 
-      console.log('[enhance] API Response:', response.data);
+      console.log('[enhance] API Response:', JSON.stringify(response.data, null, 2));
 
       const data = response.data;
 
       if (data?.imageUrl) {
         const enhancedUrl = data.imageUrl;
-        
+
         console.log(`[enhance] Enhanced image URL: ${enhancedUrl}`);
 
-        await sendMessage(senderId, {
-          text: ''
-        }, token);
-
-        // 2. Image attachment (SEND THIS BY ITSELF, NO TEXT)
+        // Send the enhanced image directly
         await sendMessage(senderId, {
           attachment: {
             type: 'image',
@@ -63,22 +60,21 @@ module.exports = {
           }
         }, token);
 
-        // 3. Author credit
-        if (data.author) {
-          await sendMessage(senderId, {
-            text: ``
-          }, token);
-        }
-
-        // 4. Direct link
+        // Send direct link (optional)
         await sendMessage(senderId, {
           text: `${enhancedUrl}`
         }, token);
 
+        if (data.author) {
+          await sendMessage(senderId, {
+            text: `${data.author}`
+          }, token);
+        }
+
       } else {
         console.error('Unexpected API response:', data);
-        await sendMessage(senderId, { 
-          text: '❌| Failed to enhance the image. Please try again.' 
+        await sendMessage(senderId, {
+          text: 'Failed to enhance the image. Please try again.'
         }, token);
       }
 
@@ -90,7 +86,7 @@ module.exports = {
       });
 
       let errorMessage = 'Failed to enhance image. ';
-      
+
       if (error.response?.status === 500) {
         errorMessage += 'Server error. Please try again later.';
       } else if (error.response?.status === 400) {
@@ -102,7 +98,7 @@ module.exports = {
       }
 
       await sendMessage(senderId, {
-        text: `❌| ${errorMessage}`
+        text: errorMessage
       }, token);
     }
   }
@@ -112,13 +108,22 @@ module.exports = {
 
 async function extractImageUrl(event, token) {
   try {
+    // Check if replying to an image
     if (event?.message?.reply_to?.mid) {
       return await getRepliedImage(event.message.reply_to.mid, token);
-    } 
-    else if (event?.message?.attachments?.[0]?.type === 'image') {
-      return event.message.attachments[0].payload.url;
     }
-    else if (event?.message?.text) {
+
+    // Check if message has image attachment
+    if (event?.message?.attachments && event.message.attachments.length > 0) {
+      for (const attachment of event.message.attachments) {
+        if (attachment.type === 'image' || attachment.type === 'photo') {
+          return attachment.payload?.url || attachment.url || null;
+        }
+      }
+    }
+
+    // Check if text contains image URL
+    if (event?.message?.text) {
       const text = event.message.text;
       const urlMatch = text.match(/(https?:\/\/[^\s]+\.(?:png|jpg|jpeg|gif|webp|bmp|svg))/i);
       if (urlMatch) {
@@ -128,7 +133,7 @@ async function extractImageUrl(event, token) {
   } catch (err) {
     console.error('[Image Extraction] Failed:', err);
   }
-  return '';
+  return null;
 }
 
 async function getRepliedImage(mid, token) {
@@ -138,7 +143,12 @@ async function getRepliedImage(mid, token) {
       access_token: token
     };
     const { data } = await axios.get(url, { params });
-    return data?.data?.[0]?.image_data?.url || '';
+
+    if (data?.data && data.data.length > 0) {
+      const attachment = data.data[0];
+      return attachment?.image_data?.url || attachment?.url || null;
+    }
+    return null;
   } catch (err) {
     console.error('[Replied Image] Failed:', err.response?.data || err.message);
     throw new Error('Failed to retrieve replied image.');
