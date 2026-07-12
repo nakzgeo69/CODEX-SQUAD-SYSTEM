@@ -21,7 +21,7 @@ module.exports = {
 
     if (!prompt) {
       await sendMessage(senderId, {
-        text: 'Copilot AI\n\nUsage: maam [message]\n\nExamples:\n  maam what is machine learning\n  maam sino ang pumatay kay lapu-lapu\n  maam explain quantum physics'
+        text: 'Usage: maam what is machine learning\n  maam sino ang pumatay kay lapu-lapu'
       }, token);
       return;
     }
@@ -32,40 +32,34 @@ module.exports = {
     if (lastUsed && (now - lastUsed) < COOLDOWN_TIME) {
       const remaining = Math.ceil((COOLDOWN_TIME - (now - lastUsed)) / 1000);
       await sendMessage(senderId, {
-        text: 'Please wait ' + remaining + ' seconds before using this command again.'
+        text: 'Please wait ' + remaining + ' seconds.'
       }, token);
       return;
     }
 
     userCooldowns.set(senderId, now);
 
-    await sendMessage(senderId, {
-      text: ''
-    }, token);
-
     try {
-      const response = await callCopilotAPI(prompt);
+      const response = await callAPI(prompt);
 
       if (response) {
         const cleaned = cleanResponse(response);
         await sendChunks(senderId, cleaned, token);
       } else {
         await sendMessage(senderId, {
-          text: 'No response from API. Please try again later.'
+          text: 'No response. Please try again.'
         }, token);
       }
 
     } catch (error) {
       console.error('[maam] Error:', error.message);
 
-      let errorMessage = 'Server error. Please try again later.';
+      let errorMessage = 'Server error. Please try again.';
 
       if (error.response?.status === 429) {
-        errorMessage = 'Rate limit exceeded. Please wait a moment.';
-      } else if (error.response?.status === 403) {
-        errorMessage = 'Access denied. API key may be invalid.';
+        errorMessage = 'Rate limit exceeded. Please wait.';
       } else if (error.response?.status === 500) {
-        errorMessage = 'Server error. The API is currently down.';
+        errorMessage = 'Server down. Please try again later.';
       } else if (error.code === 'ECONNABORTED') {
         errorMessage = 'Request timeout. Please try again.';
       }
@@ -77,13 +71,11 @@ module.exports = {
   }
 };
 
-async function callCopilotAPI(prompt, maxRetries = 3) {
+async function callAPI(prompt, maxRetries = 3) {
   let lastError = null;
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
-      console.log('[maam] Attempt ' + attempt + ' for:', prompt);
-
       const encodedPrompt = encodeURIComponent(prompt);
       const url = API_URL + '?prompt=' + encodedPrompt;
 
@@ -93,8 +85,6 @@ async function callCopilotAPI(prompt, maxRetries = 3) {
           'Accept': 'application/json'
         }
       });
-
-      console.log('[maam] Response status:', data?.status);
 
       if (data?.status === true && data?.data?.text) {
         return data.data.text;
@@ -120,7 +110,6 @@ async function callCopilotAPI(prompt, maxRetries = 3) {
 
       if (attempt < maxRetries) {
         const delay = attempt * 2000;
-        console.log('[maam] Waiting ' + delay + 'ms before retry...');
         await new Promise(resolve => setTimeout(resolve, delay));
       }
     }
