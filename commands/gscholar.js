@@ -36,7 +36,7 @@ Features:
 
     const query = args.join(' ');
     await sendMessage(senderId, {
-      text: `🔍 Searching Google Scholar for: "${query}"...`
+      text: ``
     }, token);
 
     try {
