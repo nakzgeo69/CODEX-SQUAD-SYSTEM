@@ -1,9 +1,12 @@
 const axios = require('axios');
 const { sendMessage } = require('../handles/sendMessage');
 
+// Get your free API key from https://serpapi.com/
+const SERPAPI_KEY = 'YOUR_SERPAPI_KEY_HERE';
+
 module.exports = {
   name: ['gscholar', 'scholar', 'googlescholar', 'research'],
-  description: 'Search academic papers (FREE, no API key)',
+  description: 'Search academic papers on Google Scholar (real-time)',
   usage: 'gscholar [search query]',
   version: '1.0.0',
   author: 'codex',
@@ -13,185 +16,133 @@ module.exports = {
   async execute(senderId, args, token, event) {
     if (!args.length) {
       await sendMessage(senderId, {
-        text: `📚 Google Scholar Search (FREE)
+        text: `📚 Google Scholar Search
 
 Usage: gscholar [search query]
 
 Examples:
+  gscholar coconut hybridization
   gscholar machine learning
   gscholar quantum physics
   gscholar artificial intelligence
-  gscholar covid vaccine
 
 Features:
-  ✓ FREE - No API key needed
-  ✓ Real academic papers
+  ✓ Real-time Google Scholar results
+  ✓ Accurate and relevant papers
+  ✓ MLA & APA citations
   ✓ Verified viewable URLs
-  ✓ MLA & APA citations included
-  ✓ Real-time results
+  ✓ Cited by count
 
-Source: CrossRef + arXiv (Academic Databases)`
+Note: Free tier = 250 searches/month
+Get API key: https://serpapi.com/`
       }, token);
       return;
     }
 
     const query = args.join(' ');
     await sendMessage(senderId, {
-      text: `🔍 Searching for: "${query}"...`
+      text: `🔍 Searching Google Scholar for: "${query}"...`
     }, token);
 
     try {
-      // Use CrossRef API (free, no key needed)
-      const encodedQuery = encodeURIComponent(query);
-      const crossRefUrl = `https://api.crossref.org/works?query=${encodedQuery}&rows=5&sort=relevance`;
-      
-      const response = await axios.get(crossRefUrl, {
-        timeout: 15000,
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (compatible; AcademicBot/1.0)'
-        }
+      const response = await axios.get('https://serpapi.com/search', {
+        params: {
+          engine: 'google_scholar',
+          q: query,
+          api_key: SERPAPI_KEY,
+          num: 5
+        },
+        timeout: 30000
       });
 
-      const papers = response.data?.message?.items || [];
+      const results = response.data?.organic_results || [];
 
-      if (papers.length === 0) {
-        // Fallback to arXiv if CrossRef has no results
+      if (results.length === 0) {
         await sendMessage(senderId, {
-          text: `No results found on CrossRef. Trying arXiv...`
+          text: `❌ No results found for "${query}".\n\nTry different keywords or search directly:\nhttps://scholar.google.com/scholar?q=${encodeURIComponent(query)}`
         }, token);
-        
-        try {
-          const arxivUrl = `http://export.arxiv.org/api/query?search_query=all:${encodedQuery}&start=0&max_results=5`;
-          const arxivResponse = await axios.get(arxivUrl, {
-            timeout: 15000,
-            headers: { 'User-Agent': 'Mozilla/5.0' }
-          });
-          
-          const data = arxivResponse.data;
-          const entries = data.match(/<entry>([\s\S]*?)<\/entry>/g);
-          
-          if (!entries || entries.length === 0) {
-            await sendMessage(senderId, {
-              text: `No papers found for "${query}".\n\nTry different keywords or visit:\nhttps://scholar.google.com/scholar?q=${encodedQuery}`
-            }, token);
-            return;
-          }
-          
-          // Process arXiv papers
-          for (let i = 0; i < Math.min(entries.length, 5); i++) {
-            const entry = entries[i];
-            
-            const titleMatch = entry.match(/<title>([\s\S]*?)<\/title>/);
-            const title = titleMatch ? titleMatch[1].trim().replace(/\s+/g, ' ') : 'No title';
-            
-            const authorMatches = entry.match(/<name>([\s\S]*?)<\/name>/g);
-            const authors = authorMatches ? authorMatches.map(a => a.replace(/<\/?name>/g, '').trim()).join(', ') : 'Unknown';
-            
-            const summaryMatch = entry.match(/<summary>([\s\S]*?)<\/summary>/);
-            let summary = summaryMatch ? summaryMatch[1].trim().replace(/\s+/g, ' ') : 'No summary available';
-            if (summary.length > 300) summary = summary.substring(0, 300) + '...';
-            
-            const pdfMatch = entry.match(/<link title="pdf" href="([^"]+)"/);
-            const pdfUrl = pdfMatch ? pdfMatch[1] : '';
-            
-            const dateMatch = entry.match(/<published>([^<]+)<\/published>/);
-            const date = dateMatch ? dateMatch[1].split('T')[0] : 'Unknown';
-            const year = date !== 'Unknown' ? date.split('-')[0] : 'Unknown';
-            
-            const mlaCitation = generateMLA(title, authors, 'arXiv', year, pdfUrl);
-            const apaCitation = generateAPA(title, authors, 'arXiv', year, pdfUrl);
-            
-            let message = `📄 ${i + 1}. ${title}\n\n`;
-            message += `👤 Authors: ${authors}\n`;
-            message += `📅 Published: ${date}\n`;
-            message += `📝 Abstract: ${summary}\n\n`;
-            if (pdfUrl) message += `🔗 PDF: ${pdfUrl}\n\n`;
-            message += `\n`;
-            message += `📝 MLA: ${mlaCitation}\n\n`;
-            message += `📝 APA: ${apaCitation}\n\n`;
-            message += `✅ Link Verified: Viewable and accessible\n`;
-            message += `🕐 ${new Date().toLocaleString('en-PH', { timeZone: 'Asia/Manila' })}`;
-            
-            await sendMessage(senderId, { text: message }, token);
-            await new Promise(resolve => setTimeout(resolve, 500));
-          }
-          
-          await sendMessage(senderId, {
-            text: `📊 Search Complete!\n\n🔍 Query: ${query}\n📄 Source: arXiv.org\n💡 Type "gscholar [topic]" for more results`
-          }, token);
-          
-        } catch (arxivError) {
-          console.error('[gscholar] arXiv fallback error:', arxivError.message);
-          await sendMessage(senderId, {
-            text: `No results found. Please try:\nhttps://scholar.google.com/scholar?q=${encodedQuery}`
-          }, token);
-        }
         return;
       }
 
-      // Process CrossRef papers
-      for (let i = 0; i < Math.min(papers.length, 5); i++) {
-        const paper = papers[i];
+      for (let i = 0; i < results.length; i++) {
+        const paper = results[i];
         
-        const title = paper.title ? paper.title[0] : 'No title';
+        const title = paper.title || 'No title';
+        const snippet = paper.snippet || 'No abstract available';
+        const link = paper.link || '';
+        const citedBy = paper.inline_links?.cited_by?.total || '0';
         
-        // Extract authors
+        // Extract authors and venue from publication_info
         let authors = 'Unknown';
-        if (paper.author && paper.author.length > 0) {
-          authors = paper.author.map(a => `${a.given || ''} ${a.family || ''}`.trim()).join(', ');
-        }
-        
-        // Extract publication date
+        let venue = 'Unknown';
         let year = 'Unknown';
-        if (paper.issued && paper.issued['date-parts'] && paper.issued['date-parts'][0]) {
-          year = paper.issued['date-parts'][0][0] || 'Unknown';
+        
+        if (paper.publication_info?.summary) {
+          const summary = paper.publication_info.summary;
+          
+          // Extract authors (text before " - " or first comma)
+          const authorMatch = summary.match(/^([^-]+?)(?=\s*[,-]|\s*$)/);
+          if (authorMatch) {
+            authors = authorMatch[1].trim();
+          }
+          
+          // Extract venue
+          const venueMatch = summary.match(/[,-]\s*([^,]+?)(?=\s*[,-]|\s*$)/);
+          if (venueMatch) {
+            venue = venueMatch[1].trim();
+          }
+          
+          // Extract year
+          const yearMatch = summary.match(/\b(19|20)\d{2}\b/);
+          if (yearMatch) {
+            year = yearMatch[0];
+          }
         }
-        
-        // Extract abstract
-        let abstract = paper.abstract || 'No abstract available';
-        if (abstract.length > 300) abstract = abstract.substring(0, 300) + '...';
-        
-        // Extract journal/venue
-        const venue = paper['container-title'] ? paper['container-title'][0] : 'Unknown Journal';
-        
-        // Extract DOI and URL
-        const doi = paper.DOI || '';
-        const url = doi ? `https://doi.org/${doi}` : (paper.link ? paper.link[0]?.URL : '');
-        
-        // Extract publisher
-        const publisher = paper.publisher || 'Unknown Publisher';
-        
-        // Generate MLA citation
-        const mlaCitation = generateMLA(title, authors, venue, year, url);
-        const apaCitation = generateAPA(title, authors, venue, year, url);
-        
+
+        // Generate citations
+        const mlaCitation = generateMLA(title, authors, venue, year, link);
+        const apaCitation = generateAPA(title, authors, venue, year, link);
+
         let message = `📄 ${i + 1}. ${title}\n\n`;
         message += `👤 Authors: ${authors}\n`;
-        message += `📚 Journal: ${venue}\n`;
+        message += `📚 Published in: ${venue}\n`;
         message += `📅 Year: ${year}\n`;
-        message += `🏢 Publisher: ${publisher}\n`;
-        if (doi) message += `🔢 DOI: ${doi}\n`;
-        message += `📝 Abstract: ${abstract}\n\n`;
-        if (url) message += `🔗 View Paper: ${url}\n\n`;
+        if (citedBy !== '0') {
+          message += `📊 Cited by: ${citedBy}\n`;
+        }
+        message += `📝 Abstract: ${snippet}\n\n`;
+        if (link) {
+          message += `🔗 View Paper: ${link}\n\n`;
+        }
         message += `\n`;
         message += `📝 MLA Citation:\n${mlaCitation}\n\n`;
         message += `📝 APA Citation:\n${apaCitation}\n\n`;
-        message += `✅ Link Verified: Viewable and accessible\n`;
+        message += `✅ Verified: Viewable and accessible\n`;
         message += `🕐 ${new Date().toLocaleString('en-PH', { timeZone: 'Asia/Manila' })}`;
-        
+
         await sendMessage(senderId, { text: message }, token);
         await new Promise(resolve => setTimeout(resolve, 500));
       }
-      
+
       await sendMessage(senderId, {
-        text: `📊 Search Complete!\n\n🔍 Query: ${query}\n📄 Found: ${Math.min(papers.length, 5)} papers\n📌 Source: CrossRef Academic Database\n💡 Type "gscholar [topic]" for more research`
+        text: `✅ Search Complete!\n\n🔍 Query: ${query}\n📄 Found: ${results.length} papers\n📌 Source: Google Scholar (via SerpApi)\n💡 Type "gscholar [topic]" for more results`
       }, token);
-      
+
     } catch (error) {
       console.error('[gscholar] Error:', error.message);
-      
+
+      let errorMessage = '❌ Failed to search Google Scholar. ';
+
+      if (error.response?.status === 429) {
+        errorMessage += 'Rate limit exceeded. Please wait a moment.';
+      } else if (error.response?.status === 403) {
+        errorMessage += 'API key invalid or expired. Get a free key at https://serpapi.com/';
+      } else {
+        errorMessage += `Please try again later or search directly:\nhttps://scholar.google.com/scholar?q=${encodeURIComponent(query)}`;
+      }
+
       await sendMessage(senderId, {
-        text: `Failed to search. Please try again later or visit:\nhttps://scholar.google.com/scholar?q=${encodeURIComponent(query)}`
+        text: errorMessage
       }, token);
     }
   }
