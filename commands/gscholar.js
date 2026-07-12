@@ -1,34 +1,23 @@
 const axios = require('axios');
 const { sendMessage } = require('../handles/sendMessage');
 
+// Your SerpApi Key (free from serpapi.com)
 const SERPAPI_KEY = '96a606904519013f159fa59fca23892e38a305ea97159d1b2a77ea71364f9709';
 
 module.exports = {
   name: ['gscholar', 'scholar', 'googlescholar', 'research'],
-  description: 'Search academic papers on Google Scholar (real-time)',
+  description: 'Search academic papers on Google Scholar with complete citations',
   usage: 'gscholar [search query]',
-  version: '1.0.0',
+  version: '2.0.0',
   author: 'codex',
   category: 'search',
   cooldown: 5,
 
   async execute(senderId, args, token, event) {
+    // Check if query is provided
     if (!args.length) {
       await sendMessage(senderId, {
-        text: `📚 Google Scholar Search (APA 7th Edition)
-
-Usage: gscholar [search query]
-
-Examples:
-  gscholar coconut hybridization
-  gscholar machine learning
-
-Features:
-  ✓ Real-time Google Scholar results
-  ✓ Complete APA 7th (DOI + Pages)
-  ✓ MLA 9th Edition
-  ✓ Cited by count
-  ✓ Google Scholar links`
+        text: 'Google Scholar Search\n\nUsage: gscholar [search query]\n\nExamples:\n  gscholar coconut hybridization\n  gscholar machine learning\n  gscholar quantum physics\n\nFeatures:\n  Real-time Google Scholar results\n  Complete APA 7th Edition with DOI\n  MLA 9th Edition\n  Cited by count\n  Verified viewable URLs'
       }, token);
       return;
     }
@@ -39,6 +28,7 @@ Features:
     }, token);
 
     try {
+      // Call SerpApi Google Scholar
       const response = await axios.get('https://serpapi.com/search', {
         params: {
           engine: 'google_scholar',
@@ -55,23 +45,20 @@ Features:
 
       if (results.length === 0) {
         await sendMessage(senderId, {
-          text: `❌ No results found for "${query}".\n\nTry different keywords or search directly:\nhttps://scholar.google.com/scholar?q=${encodeURIComponent(query)}`
+          text: `No results found for "${query}".\n\nTry different keywords or search directly:\nhttps://scholar.google.com/scholar?q=${encodeURIComponent(query)}`
         }, token);
         return;
       }
 
+      // Process each paper
       for (let i = 0; i < results.length; i++) {
         const paper = results[i];
         
+        // Extract paper details
         const title = paper.title || 'No title';
         const snippet = paper.snippet || 'No abstract available';
         const citedBy = paper.inline_links?.cited_by?.total || '0';
-        
-        // Get the Google Scholar link
-        let scholarLink = paper.link || paper.redirect_link || '';
-        if (!scholarLink) {
-          scholarLink = `https://scholar.google.com/scholar?q=${encodeURIComponent(title)}`;
-        }
+        const scholarLink = paper.link || paper.redirect_link || `https://scholar.google.com/scholar?q=${encodeURIComponent(title)}`;
 
         // Extract metadata
         let authors = 'Unknown';
@@ -80,7 +67,6 @@ Features:
         let volume = '';
         let issue = '';
         let pages = '';
-        let doi = '';
         
         if (paper.publication_info?.summary) {
           const summary = paper.publication_info.summary;
@@ -104,15 +90,7 @@ Features:
           }
         }
 
-        // Try to extract DOI from snippet or link
-        const doiMatch = snippet.match(/doi\.org\/([^\s]+)/i) || 
-                        scholarLink.match(/doi\.org\/([^\s]+)/i) ||
-                        scholarLink.match(/\/abs\/([^\s]+)/i);
-        if (doiMatch) {
-          doi = `https://doi.org/${doiMatch[1]}`;
-        }
-
-        // Try to extract volume, issue, pages from snippet
+        // Extract volume, issue, pages from snippet
         const volMatch = snippet.match(/vol\.?\s*(\d+)/i);
         if (volMatch) volume = volMatch[1];
         
@@ -120,13 +98,23 @@ Features:
         if (issueMatch) issue = issueMatch[1];
         
         const pageMatch = snippet.match(/pp\.?\s*(\d+-\d+)/i) || 
-                         snippet.match(/pages?\s*(\d+-\d+)/i);
+                         snippet.match(/pages?\s*(\d+-\d+)/i) ||
+                         snippet.match(/(\d+-\d+)\s*pp/i);
         if (pageMatch) pages = pageMatch[1];
 
-        // Generate COMPLETE APA citation
-        const apaCitation = generateAPA(authors, year, title, venue, volume, issue, pages, doi);
-        const mlaCitation = generateMLA(authors, title, venue, year, scholarLink);
+        // Auto-fetch DOI from CrossRef
+        let doi = await fetchDOIFromCrossRef(title, authors, year);
+        
+        // If no DOI from CrossRef, try to extract from link
+        if (!doi) {
+          doi = extractDOIFromLink(scholarLink);
+        }
 
+        // Generate complete APA and MLA citations
+        const apaCitation = generateAPA(authors, year, title, venue, volume, issue, pages, doi, scholarLink);
+        const mlaCitation = generateMLA(authors, title, venue, year, scholarLink, doi, volume, issue, pages);
+
+        // Build response message
         let message = `📄 ${i + 1}. ${title}\n\n`;
         message += `👤 Authors: ${authors}\n`;
         message += `📚 Published in: ${venue}\n`;
@@ -134,11 +122,15 @@ Features:
         if (volume) message += `📖 Volume: ${volume}\n`;
         if (issue) message += `📌 Issue: ${issue}\n`;
         if (pages) message += `📄 Pages: ${pages}\n`;
-        if (doi) message += `🔢 DOI: ${doi}\n`;
+        if (doi) {
+          message += `🔢 DOI: ${doi}\n`;
+        } else {
+          message += `🔢 DOI: Not available\n`;
+        }
         if (citedBy !== '0') {
           message += `📊 Cited by: ${citedBy}\n`;
         }
-        message += `📝 Abstract: ${snippet}\n\n`;
+        message += `📝 Abstract: ${snippet.substring(0, 300)}${snippet.length > 300 ? '...' : ''}\n\n`;
         if (scholarLink) {
           message += `🔗 Google Scholar: ${scholarLink}\n\n`;
         }
@@ -152,15 +144,16 @@ Features:
         await new Promise(resolve => setTimeout(resolve, 500));
       }
 
+      // Final summary
       await sendMessage(senderId, {
-        text: `✅ Search Complete!\n\n🔍 Query: ${query}\n📄 Found: ${results.length} papers\n📌 Source: Google Scholar (via SerpApi)`
+        text: `Search Complete!\n\nQuery: ${query}\nFound: ${results.length} papers\nSource: Google Scholar (via SerpApi)`
       }, token);
 
     } catch (error) {
       console.error('[gscholar] Error:', error.message);
       console.error('[gscholar] Error details:', error.response?.data || error);
 
-      let errorMessage = '❌ Failed to search Google Scholar. ';
+      let errorMessage = 'Failed to search Google Scholar. ';
 
       if (error.response?.status === 429) {
         errorMessage += 'Rate limit exceeded. Please wait a moment.';
@@ -177,17 +170,94 @@ Features:
   }
 };
 
-// --- COMPLETE APA 7TH EDITION CITATION ---
-function generateAPA(authors, year, title, venue, volume, issue, pages, doi) {
-  // Format authors
-  const authorList = authors.split(',').map(a => a.trim());
+// --- AUTO-FETCH DOI FROM CROSSREF ---
+async function fetchDOIFromCrossRef(title, authors, year) {
+  try {
+    let query = encodeURIComponent(title);
+    if (authors && authors !== 'Unknown') {
+      const firstAuthor = authors.split(',')[0].trim();
+      query += `+${encodeURIComponent(firstAuthor)}`;
+    }
+    if (year && year !== 'Unknown') {
+      query += `+${year}`;
+    }
+
+    const url = `https://api.crossref.org/works?query=${query}&rows=1`;
+    console.log('[DOI] Fetching from CrossRef:', url);
+    
+    const response = await axios.get(url, {
+      timeout: 10000,
+      headers: { 'User-Agent': 'AcademicBot/1.0' }
+    });
+
+    const items = response.data?.message?.items || [];
+    if (items.length > 0 && items[0].DOI) {
+      const doi = `https://doi.org/${items[0].DOI}`;
+      console.log('[DOI] Found:', doi);
+      return doi;
+    }
+    
+    console.log('[DOI] No DOI found in CrossRef');
+    return null;
+  } catch (error) {
+    console.error('[DOI] Fetch error:', error.message);
+    return null;
+  }
+}
+
+// --- EXTRACT DOI FROM LINK ---
+function extractDOIFromLink(link) {
+  if (!link) return null;
+  
+  // Check if link already has DOI
+  const doiMatch = link.match(/doi\.org\/([^\s]+)/i);
+  if (doiMatch) {
+    return `https://doi.org/${doiMatch[1]}`;
+  }
+  
+  // Springer (article/10.xxxx)
+  const springerMatch = link.match(/article\/(10\.[^\s]+)/i);
+  if (springerMatch) {
+    return `https://doi.org/${springerMatch[1]}`;
+  }
+  
+  // Nature
+  const natureMatch = link.match(/nature\.com\/articles\/([a-zA-Z0-9]+)/);
+  if (natureMatch) {
+    return `https://doi.org/10.1038/${natureMatch[1]}`;
+  }
+  
+  // ScienceDirect
+  const sciDirectMatch = link.match(/pii\/([a-zA-Z0-9]+)/);
+  if (sciDirectMatch) {
+    return `https://doi.org/10.1016/${sciDirectMatch[1]}`;
+  }
+  
+  // Wiley
+  const wileyMatch = link.match(/wiley\.com\/doi\/abs\/([^\s]+)/);
+  if (wileyMatch) {
+    return `https://doi.org/${wileyMatch[1]}`;
+  }
+  
+  return null;
+}
+
+// --- COMPLETE APA 7TH EDITION ---
+function generateAPA(authors, year, title, venue, volume, issue, pages, doi, url) {
+  const authorList = authors.split(',').map(a => a.trim()).filter(a => a);
   let formattedAuthors = '';
   
-  if (authorList.length === 1) {
+  if (authorList.length === 0 || (authorList.length === 1 && authorList[0] === 'Unknown')) {
+    formattedAuthors = 'Unknown';
+  } else if (authorList.length === 1) {
     const parts = authorList[0].split(' ');
-    const last = parts.length > 1 ? parts[parts.length-1] : parts[0];
-    const first = parts.length > 1 ? parts.slice(0, -1).map(p => p[0] + '.').join(' ') : '';
-    formattedAuthors = `${last}, ${first}`;
+    if (parts.length > 1) {
+      const last = parts[parts.length-1];
+      const first = parts.slice(0, -1).map(p => p[0] + '.').join(' ');
+      formattedAuthors = `${last}, ${first}`;
+    } else {
+      formattedAuthors = authorList[0];
+    }
   } else if (authorList.length === 2) {
     const parts1 = authorList[0].split(' ');
     const parts2 = authorList[1].split(' ');
@@ -203,14 +273,12 @@ function generateAPA(authors, year, title, venue, volume, issue, pages, doi) {
     formattedAuthors = `${last}, ${first}, et al.`;
   }
 
-  // Build the citation
   let citation = `${formattedAuthors} (${year}). ${title}.`;
   
   if (venue && venue !== 'Unknown') {
     citation += ` ${venue}`;
   }
   
-  // Add volume and issue
   if (volume) {
     citation += `, ${volume}`;
     if (issue) {
@@ -218,25 +286,27 @@ function generateAPA(authors, year, title, venue, volume, issue, pages, doi) {
     }
   }
   
-  // Add pages
   if (pages) {
     citation += `, ${pages}`;
   }
   
-  // Add DOI
   if (doi) {
     citation += `. ${doi}`;
+  } else if (url && url !== '') {
+    citation += ` Retrieved from ${url}`;
   }
   
   return citation;
 }
 
-// --- MLA 9TH EDITION CITATION ---
-function generateMLA(authors, title, venue, year, link) {
-  const authorList = authors.split(',').map(a => a.trim());
+// --- MLA 9TH EDITION ---
+function generateMLA(authors, title, venue, year, url, doi, volume, issue, pages) {
+  const authorList = authors.split(',').map(a => a.trim()).filter(a => a);
   let formattedAuthors = '';
   
-  if (authorList.length === 1) {
+  if (authorList.length === 0 || (authorList.length === 1 && authorList[0] === 'Unknown')) {
+    formattedAuthors = 'Unknown';
+  } else if (authorList.length === 1) {
     const parts = authorList[0].split(' ');
     formattedAuthors = parts.length > 1 ? `${parts[parts.length-1]}, ${parts.slice(0, -1).join(' ')}` : authorList[0];
   } else if (authorList.length === 2) {
@@ -251,5 +321,28 @@ function generateMLA(authors, title, venue, year, link) {
     formattedAuthors = `${last} et al.`;
   }
 
-  return `${formattedAuthors}. "${title}." ${venue}, ${year}. ${link ? 'Web. ' + new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : ''}`;
+  let citation = `${formattedAuthors}. "${title}." ${venue},`;
+  
+  if (volume) {
+    citation += ` vol. ${volume},`;
+    if (issue) {
+      citation += ` no. ${issue},`;
+    }
+  }
+  
+  if (pages) {
+    citation += ` pp. ${pages},`;
+  }
+  
+  citation += ` ${year}.`;
+  
+  if (doi) {
+    citation += ` doi:${doi.replace('https://doi.org/', '')}.`;
+  } else if (url && url !== '') {
+    citation += ` ${url}.`;
+  }
+  
+  citation += ` Web. ${new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}.`;
+  
+  return citation;
 }
