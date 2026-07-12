@@ -64,9 +64,6 @@ module.exports = {
         let authors = 'Unknown';
         let venue = 'Unknown';
         let year = 'Unknown';
-        let volume = '';
-        let issue = '';
-        let pages = '';
         
         if (paper.publication_info?.summary) {
           const summary = paper.publication_info.summary;
@@ -91,16 +88,11 @@ module.exports = {
         }
 
         // Extract volume, issue, pages from snippet
-        const volMatch = snippet.match(/vol\.?\s*(\d+)/i);
-        if (volMatch) volume = volMatch[1];
-        
-        const issueMatch = snippet.match(/no\.?\s*(\d+)/i);
-        if (issueMatch) issue = issueMatch[1];
-        
-        const pageMatch = snippet.match(/pp\.?\s*(\d+-\d+)/i) || 
-                         snippet.match(/pages?\s*(\d+-\d+)/i) ||
-                         snippet.match(/(\d+-\d+)\s*pp/i);
-        if (pageMatch) pages = pageMatch[1];
+        const publicationInfo = paper.publication_info?.summary || '';
+        const details = extractDetails(snippet, publicationInfo);
+        const volume = details.volume;
+        const issue = details.issue;
+        const pages = details.pages;
 
         // Auto-fetch DOI from CrossRef
         let doi = await fetchDOIFromCrossRef(title, authors, year);
@@ -110,13 +102,16 @@ module.exports = {
           doi = extractDOIFromLink(scholarLink);
         }
 
+        // Format authors for display
+        const displayAuthors = formatAuthorsDisplay(authors);
+
         // Generate complete APA and MLA citations
         const apaCitation = generateAPA(authors, year, title, venue, volume, issue, pages, doi, scholarLink);
         const mlaCitation = generateMLA(authors, title, venue, year, scholarLink, doi, volume, issue, pages);
 
         // Build response message
         let message = `📄 ${i + 1}. ${title}\n\n`;
-        message += `👤 Authors: ${authors}\n`;
+        message += `👤 Authors: ${displayAuthors}\n`;
         message += `📚 Published in: ${venue}\n`;
         message += `📅 Year: ${year}\n`;
         if (volume) message += `📖 Volume: ${volume}\n`;
@@ -169,6 +164,85 @@ module.exports = {
     }
   }
 };
+
+// --- EXTRACT VOLUME, ISSUE, PAGES ---
+function extractDetails(snippet, publicationInfo) {
+  let volume = '';
+  let issue = '';
+  let pages = '';
+  
+  // Combine snippet and publication info for better matching
+  const text = `${snippet} ${publicationInfo || ''}`;
+  
+  // Extract Volume - multiple patterns
+  const volumePatterns = [
+    /vol\.?\s*(\d+)/i,
+    /volume\s*(\d+)/i,
+    /v\.\s*(\d+)/i,
+    /(\d+)\s*\(/  // Volume followed by issue in parentheses
+  ];
+  
+  for (const pattern of volumePatterns) {
+    const match = text.match(pattern);
+    if (match) {
+      volume = match[1];
+      break;
+    }
+  }
+  
+  // Extract Issue
+  const issuePatterns = [
+    /no\.?\s*(\d+)/i,
+    /issue\s*(\d+)/i,
+    /\((\d+)\)/  // Issue in parentheses
+  ];
+  
+  for (const pattern of issuePatterns) {
+    const match = text.match(pattern);
+    if (match && match[1] !== volume) {
+      issue = match[1];
+      break;
+    }
+  }
+  
+  // Extract Pages
+  const pagePatterns = [
+    /pp\.?\s*(\d+-\d+)/i,
+    /pages?\s*(\d+-\d+)/i,
+    /(\d+-\d+)\s*pp/i,
+    /(\d+-\d+)\s*\(/i,
+    /:\s*(\d+-\d+)/i,
+    /(\d+)\s*-\s*(\d+)/
+  ];
+  
+  for (const pattern of pagePatterns) {
+    const match = text.match(pattern);
+    if (match) {
+      if (match[1] && match[2]) {
+        pages = `${match[1]}-${match[2]}`;
+      } else if (match[1]) {
+        pages = match[1];
+      }
+      if (pages && pages.includes('-')) {
+        break;
+      }
+    }
+  }
+  
+  return { volume, issue, pages };
+}
+
+// --- FORMAT AUTHORS FOR DISPLAY ---
+function formatAuthorsDisplay(authors) {
+  const authorList = authors.split(',').map(a => a.trim()).filter(a => a);
+  if (authorList.length === 0 || (authorList.length === 1 && authorList[0] === 'Unknown')) {
+    return 'Unknown';
+  }
+  if (authorList.length <= 3) {
+    return authorList.join(', ');
+  }
+  return `${authorList.slice(0, 3).join(', ')}, et al.`;
+}
 
 // --- AUTO-FETCH DOI FROM CROSSREF ---
 async function fetchDOIFromCrossRef(title, authors, year) {
