@@ -1,8 +1,8 @@
 const axios = require('axios');
 const { sendMessage } = require('../handles/sendMessage');
 
-// Get your free API key from https://serpapi.com/
-const SERPAPI_KEY = 'YOUR_SERPAPI_KEY_HERE';
+// Your SerpApi Key
+const SERPAPI_KEY = '96a606904519013f159fa59fca23892e38a305ea97159d1b2a77ea71364f9709';
 
 module.exports = {
   name: ['gscholar', 'scholar', 'googlescholar', 'research'],
@@ -24,7 +24,6 @@ Examples:
   gscholar coconut hybridization
   gscholar machine learning
   gscholar quantum physics
-  gscholar artificial intelligence
 
 Features:
   ✓ Real-time Google Scholar results
@@ -33,8 +32,7 @@ Features:
   ✓ Verified viewable URLs
   ✓ Cited by count
 
-Note: Free tier = 250 searches/month
-Get API key: https://serpapi.com/`
+Note: Free tier = 250 searches/month`
       }, token);
       return;
     }
@@ -55,6 +53,8 @@ Get API key: https://serpapi.com/`
         timeout: 30000
       });
 
+      console.log('[gscholar] Response status:', response.status);
+      
       const results = response.data?.organic_results || [];
 
       if (results.length === 0) {
@@ -72,7 +72,6 @@ Get API key: https://serpapi.com/`
         const link = paper.link || '';
         const citedBy = paper.inline_links?.cited_by?.total || '0';
         
-        // Extract authors and venue from publication_info
         let authors = 'Unknown';
         let venue = 'Unknown';
         let year = 'Unknown';
@@ -80,26 +79,22 @@ Get API key: https://serpapi.com/`
         if (paper.publication_info?.summary) {
           const summary = paper.publication_info.summary;
           
-          // Extract authors (text before " - " or first comma)
           const authorMatch = summary.match(/^([^-]+?)(?=\s*[,-]|\s*$)/);
           if (authorMatch) {
             authors = authorMatch[1].trim();
           }
           
-          // Extract venue
           const venueMatch = summary.match(/[,-]\s*([^,]+?)(?=\s*[,-]|\s*$)/);
           if (venueMatch) {
             venue = venueMatch[1].trim();
           }
           
-          // Extract year
           const yearMatch = summary.match(/\b(19|20)\d{2}\b/);
           if (yearMatch) {
             year = yearMatch[0];
           }
         }
 
-        // Generate citations
         const mlaCitation = generateMLA(title, authors, venue, year, link);
         const apaCitation = generateAPA(title, authors, venue, year, link);
 
@@ -130,6 +125,7 @@ Get API key: https://serpapi.com/`
 
     } catch (error) {
       console.error('[gscholar] Error:', error.message);
+      console.error('[gscholar] Error details:', error.response?.data || error);
 
       let errorMessage = '❌ Failed to search Google Scholar. ';
 
@@ -137,6 +133,8 @@ Get API key: https://serpapi.com/`
         errorMessage += 'Rate limit exceeded. Please wait a moment.';
       } else if (error.response?.status === 403) {
         errorMessage += 'API key invalid or expired. Get a free key at https://serpapi.com/';
+      } else if (error.response?.status === 400) {
+        errorMessage += 'Invalid request. Please check your query.';
       } else {
         errorMessage += `Please try again later or search directly:\nhttps://scholar.google.com/scholar?q=${encodeURIComponent(query)}`;
       }
@@ -148,7 +146,6 @@ Get API key: https://serpapi.com/`
   }
 };
 
-// --- MLA CITATION GENERATOR ---
 function generateMLA(title, authors, venue, year, link) {
   const authorList = authors.split(',').map(a => a.trim());
   let formattedAuthors = '';
@@ -171,7 +168,6 @@ function generateMLA(title, authors, venue, year, link) {
   return `${formattedAuthors}. "${title}." ${venue}, ${year}. ${link ? 'Web. ' + new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : ''}`;
 }
 
-// --- APA CITATION GENERATOR ---
 function generateAPA(title, authors, venue, year, link) {
   const authorList = authors.split(',').map(a => a.trim());
   let formattedAuthors = '';
