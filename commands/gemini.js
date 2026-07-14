@@ -12,7 +12,6 @@ module.exports = {
 
   async execute(senderId, args, token, event) {
     try {
-      // Extract image URL from event
       let imageUrl = await extractImageUrl(event, token);
 
       if (!imageUrl) {
@@ -20,10 +19,6 @@ module.exports = {
       }
 
       console.log('[gemini] Processing image:', imageUrl);
-
-      await sendMessage(senderId, {
-        text: ''
-      }, token);
 
       const encodedImageUrl = encodeURIComponent(imageUrl);
       const apiUrl = `https://norch-project.gleeze.com/api/gemini?prompt=Analyze%20this%20image&imageurl=${encodedImageUrl}`;
@@ -51,10 +46,15 @@ module.exports = {
           .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
           .replace(/\n{3,}/g, '\n\n')
           .trim();
-        
-        await sendMessage(senderId, {
-          text: cleanResponse
-        }, token);
+
+        if (!cleanResponse) {
+          cleanResponse = 'No valid response from Gemini API.';
+        }
+
+        const chunks = splitMessage(cleanResponse, 1900);
+        for (const chunk of chunks) {
+          await sendMessage(senderId, { text: chunk }, token);
+        }
         
       } else {
         throw new Error('Invalid response from Gemini API');
@@ -65,12 +65,14 @@ module.exports = {
 
       let errorMessage = 'Error analyzing image. ';
       
-      if (error.response?.status === 500) {
-        errorMessage += 'The API server is currently unavailable. Please try again later.';
+      if (error.response?.status === 400) {
+        errorMessage = 'Invalid image format. Please send a valid image.';
+      } else if (error.response?.status === 500) {
+        errorMessage = 'The API server is currently unavailable. Please try again later.';
       } else if (error.response?.status === 429) {
-        errorMessage += 'Rate limit exceeded. Please wait a moment.';
+        errorMessage = 'Rate limit exceeded. Please wait a moment.';
       } else if (error.code === 'ECONNABORTED') {
-        errorMessage += 'Request timeout. The image may be too large.';
+        errorMessage = 'Request timeout. The image may be too large.';
       } else {
         errorMessage += error.message || 'Failed to connect to the API.';
       }
@@ -118,4 +120,31 @@ async function getRepliedImage(mid, token) {
     console.error('[Replied Image] Failed:', err.response?.data || err.message);
     return null;
   }
+}
+
+function splitMessage(text, maxLength) {
+  maxLength = maxLength || 1900;
+  const chunks = [];
+  
+  if (text.length <= maxLength) {
+    return [text];
+  }
+  
+  const lines = text.split('\n');
+  let currentChunk = '';
+  
+  for (const line of lines) {
+    if (currentChunk.length + line.length + 1 > maxLength) {
+      chunks.push(currentChunk.trim());
+      currentChunk = line + '\n';
+    } else {
+      currentChunk += line + '\n';
+    }
+  }
+  
+  if (currentChunk.trim()) {
+    chunks.push(currentChunk.trim());
+  }
+  
+  return chunks;
 }
