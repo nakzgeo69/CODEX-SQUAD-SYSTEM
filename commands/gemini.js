@@ -8,7 +8,7 @@ const API_LIST = [
 ];
 
 module.exports = {
-  name: ['gemini', 'vision', 'analyze', 'solve', 'compute', 'visualize', 'criticize'],
+  name: ['gemini', 'vision', 'analyze', 'solve', 'compute', 'visualize', 'criticize', 'think'],
   description: 'Analyze, solve, or criticize images using AI',
   usage: 'Send an image and type "gemini"',
   version: '3.0.0',
@@ -21,33 +21,9 @@ module.exports = {
       let imageUrl = await extractImageUrl(event, token);
       const userPrompt = args.join(' ') || '';
 
-      // Detect image type
-      const imageType = await detectImageType(imageUrl);
-      console.log('[gemini] Detected image type:', imageType);
-
-      let prompt = '';
-
-      if (imageType === 'math' || imageType === 'sequence' || imageType === 'puzzle' || userPrompt.toLowerCase().includes('solve')) {
-        prompt = 'Solve this problem. Provide the complete solution with steps. Include the final answer. Use plain text only. No symbols.';
-      } else if (userPrompt.toLowerCase().includes('criticize') || userPrompt.toLowerCase().includes('critique')) {
-        prompt = 'Provide a deep, critical analysis of this image. Examine its meaning, purpose, symbolism, and impact. Be thorough and insightful. Use plain text only.';
-      } else if (userPrompt.toLowerCase().includes('analyze') || userPrompt.toLowerCase().includes('visualize')) {
-        prompt = 'Analyze this image in depth. Provide detailed observations, insights, and interpretation. Use plain text only.';
-      } else if (userPrompt.toLowerCase().includes('translate')) {
-        prompt = 'Translate the text in this image. Provide only the translation. Use plain text only.';
-      } else if (imageType === 'logo' || imageType === 'emblem' || imageType === 'symbol') {
-        prompt = 'Provide a deep, critical analysis of this logo/emblem. Examine its design, symbolism, message, and overall impact. Be thorough and insightful. Use plain text only.';
-      } else if (imageType === 'text' || imageType === 'document') {
-        prompt = 'Extract and summarize the text in this image. Provide a clear, concise summary. Use plain text only.';
-      } else if (imageType === 'object' || imageType === 'scene') {
-        prompt = 'Describe this image in detail. Identify objects, people, settings, and any notable elements. Use plain text only.';
-      } else {
-        prompt = 'Analyze this image. Provide a comprehensive description and interpretation. Use plain text only.';
-      }
-
       if (!imageUrl && !userPrompt) {
         await sendMessage(senderId, {
-          text: 'Usage: gemini [question/problem]\n\nExamples:\n  gemini What is 25 x 4?\n  gemini Solve: 2x + 5 = 15\n  gemini criticize this logo\n  [send image] gemini'
+          text: 'Usage: gemini [question/problem]\n\nExamples:\n  gemini What is 25 x 4?\n  gemini Solve: 2x + 5 = 15\n  [send image] gemini'
         }, token);
         return;
       }
@@ -58,6 +34,8 @@ module.exports = {
       }
 
       console.log('[gemini] Processing image:', imageUrl);
+
+      let prompt = buildPrompt(userPrompt);
       console.log('[gemini] Prompt:', prompt);
 
       let responseData = null;
@@ -113,9 +91,9 @@ module.exports = {
       }
 
       if (responseData) {
-        let cleanResponse = cleanAndFormatResponse(responseData, userPrompt, imageType);
+        let cleanResponse = cleanAndFormatResponse(responseData, userPrompt);
         
-        if (cleanResponse.length < 20 || cleanResponse.includes('displays') || cleanResponse.includes('appears') || cleanResponse.includes('Please provide')) {
+        if (cleanResponse.length < 20 || cleanResponse.includes('displays') || cleanResponse.includes('appears') || cleanResponse.includes('Please upload')) {
           cleanResponse = await forceSolve(prompt, imageUrl);
         }
 
@@ -140,36 +118,29 @@ module.exports = {
   }
 };
 
-async function detectImageType(imageUrl) {
-  try {
-    const prompt = 'Classify this image into one category: math, sequence, puzzle, logo, emblem, symbol, text, document, object, scene, or other. Return only the category name.';
-    const apiUrl = `https://betadash-api-swordslush-production.up.railway.app/opera?ask=${encodeURIComponent(prompt)}&imageurl=${encodeURIComponent(imageUrl)}`;
-    const response = await axios.get(apiUrl, {
-      timeout: 10000,
-      headers: { 'Accept': 'application/json' }
-    });
+function buildPrompt(userPrompt) {
+  const lowerPrompt = userPrompt.toLowerCase();
 
-    if (response.data && response.data.message) {
-      const text = response.data.message.toLowerCase();
-      if (text.includes('math')) return 'math';
-      if (text.includes('sequence')) return 'sequence';
-      if (text.includes('puzzle')) return 'puzzle';
-      if (text.includes('logo')) return 'logo';
-      if (text.includes('emblem')) return 'emblem';
-      if (text.includes('symbol')) return 'symbol';
-      if (text.includes('text')) return 'text';
-      if (text.includes('document')) return 'document';
-      if (text.includes('object')) return 'object';
-      if (text.includes('scene')) return 'scene';
-      return 'other';
-    }
-  } catch (error) {
-    console.error('[detectImageType] Error:', error.message);
+  // Math/Solve mode - direct solution
+  if (lowerPrompt.includes('solve') || lowerPrompt.includes('compute') || lowerPrompt.includes('calculate') || lowerPrompt.includes('sequence') || lowerPrompt.includes('pattern')) {
+    return 'Solve this problem. Provide only the solution and final answer. Be direct and concise. No long explanations. Use plain text. No symbols.';
   }
-  return 'other';
+
+  // Criticize mode - direct analysis
+  if (lowerPrompt.includes('criticize') || lowerPrompt.includes('critique') || lowerPrompt.includes('think')) {
+    return 'Analyze this image directly. Provide a concise, direct explanation. No unnecessary text. Use plain text. No symbols.';
+  }
+
+  // Translate mode
+  if (lowerPrompt.includes('translate')) {
+    return 'Translate the text. Provide only the translation. Direct and concise. Use plain text. No symbols.';
+  }
+
+  // Default: Direct, concise analysis
+  return 'Analyze this image. Provide a direct, concise explanation. No unnecessary text. Use plain text. No symbols.';
 }
 
-function cleanAndFormatResponse(text, originalPrompt, imageType) {
+function cleanAndFormatResponse(text, originalPrompt) {
   if (!text) return 'No response.';
 
   let cleaned = text
@@ -185,8 +156,8 @@ function cleanAndFormatResponse(text, originalPrompt, imageType) {
     .replace(/[^a-zA-Z0-9\s\.,\-\!\?\:\;\'\"\(\)\%\=\+\/\*\n]/g, '')
     .trim();
 
-  // Remove describe phrases
-  const describePhrases = [
+  // Remove unnecessary phrases
+  const removePhrases = [
     /^The image displays/i,
     /^Here's a breakdown/i,
     /^The overall image/i,
@@ -198,10 +169,13 @@ function cleanAndFormatResponse(text, originalPrompt, imageType) {
     /^Upon examination/i,
     /^Please provide/i,
     /^Your request is general/i,
-    /^Could you please/i
+    /^Could you please/i,
+    /^Please upload/i,
+    /^Here is the complete solution/i,
+    /^Explanation:/i
   ];
 
-  for (const phrase of describePhrases) {
+  for (const phrase of removePhrases) {
     if (cleaned.match(phrase)) {
       cleaned = cleaned.replace(phrase, '');
       cleaned = cleaned.trim();
@@ -209,8 +183,9 @@ function cleanAndFormatResponse(text, originalPrompt, imageType) {
     }
   }
 
-  // If math/sequence, format as solution
-  if (imageType === 'math' || imageType === 'sequence' || imageType === 'puzzle' || originalPrompt.toLowerCase().includes('solve')) {
+  // If math, format as direct solution
+  const lowerPrompt = originalPrompt.toLowerCase();
+  if (lowerPrompt.includes('solve') || lowerPrompt.includes('compute') || lowerPrompt.includes('calculate') || lowerPrompt.includes('sequence')) {
     cleaned = formatMathSolution(cleaned);
   }
 
@@ -242,12 +217,14 @@ function formatMathSolution(text) {
     }
   }
   
+  // Short explanation only
   const explanation = text.replace(/[\d,\s-]+/g, '').trim();
-  if (explanation && explanation.length > 10) {
-    const uniqueExplanation = explanation.split('\n').filter((v, i, a) => a.indexOf(v) === i).join('\n');
-    formatted += 'EXPLANATION:\n' + uniqueExplanation + '\n\n';
+  if (explanation && explanation.length > 5) {
+    const shortExplanation = explanation.split('\n').filter((v, i, a) => a.indexOf(v) === i).join('\n');
+    formatted += 'EXPLANATION:\n' + shortExplanation.substring(0, 200) + '\n\n';
   }
   
+  // Final answer only
   const numbers2 = text.match(/-?\d+/g);
   if (numbers2 && numbers2.length >= 2) {
     const first2 = parseInt(numbers2[0]);
@@ -270,32 +247,32 @@ function formatMathSolution(text) {
 
 async function forceSolve(prompt, imageUrl) {
   try {
-    const apiUrl = `https://betadash-api-swordslush-production.up.railway.app/opera?ask=${encodeURIComponent('Provide a complete solution or deep analysis. Use plain text only. No symbols.')}&imageurl=${encodeURIComponent(imageUrl)}`;
+    const apiUrl = `https://betadash-api-swordslush-production.up.railway.app/opera?ask=${encodeURIComponent(prompt)}&imageurl=${encodeURIComponent(imageUrl)}`;
     const response = await axios.get(apiUrl, {
       timeout: 30000,
       headers: { 'Accept': 'application/json' }
     });
 
     if (response.data && response.data.message) {
-      return cleanAndFormatResponse(response.data.message, 'solve', 'other');
+      return cleanAndFormatResponse(response.data.message, prompt);
     }
   } catch (error) {
     console.error('[gemini] Force solve failed:', error.message);
   }
   
-  return 'Unable to analyze or solve. Please try again with a clearer image or text.';
+  return 'Unable to analyze or solve. Please try again.';
 }
 
 async function handleTextOnly(senderId, prompt, token) {
   try {
-    const apiUrl = `https://betadash-api-swordslush-production.up.railway.app/opera?ask=${encodeURIComponent(prompt + ' Use plain text only. No symbols.')}`;
+    const apiUrl = `https://betadash-api-swordslush-production.up.railway.app/opera?ask=${encodeURIComponent(prompt + ' Direct and concise. No unnecessary text. Use plain text. No symbols.')}`;
     const response = await axios.get(apiUrl, {
       timeout: 30000,
       headers: { 'Accept': 'application/json' }
     });
 
     if (response.data && response.data.message) {
-      let cleanResponse = cleanAndFormatResponse(response.data.message, prompt, 'other');
+      let cleanResponse = cleanAndFormatResponse(response.data.message, prompt);
       const chunks = splitMessage(cleanResponse, 1900);
       for (const chunk of chunks) {
         await sendMessage(senderId, { text: chunk }, token);
