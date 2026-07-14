@@ -41,7 +41,7 @@ const handleMessage = async (event, pageAccessToken) => {
   const messageText = event?.message?.text?.trim();
   const attachments = event?.message?.attachments || [];
   
-  // Extract image URL from attachments
+  // Check if message has an image attachment
   let imageUrl = null;
   let hasImage = false;
   
@@ -58,20 +58,19 @@ const handleMessage = async (event, pageAccessToken) => {
       }
     }
   }
-  
-  // If message has image and no text command, auto-upload to imgbb
+
+  // If message has image and no text command, auto-run gemini
   if (hasImage && imageUrl && !messageText) {
-    console.log('Auto-uploading image to ImgBB...');
-    const imgbbCommand = commands.get('imgbb');
-    if (imgbbCommand) {
-      await imgbbCommand.execute(senderId, [], pageAccessToken, imageUrl, event);
+    console.log('[handleMessage] Auto-analyzing image with gemini...');
+    const geminiCommand = commands.get('gemini');
+    if (geminiCommand) {
+      await geminiCommand.execute(senderId, [], pageAccessToken, event);
       return;
     }
   }
-  
-  // If message has image and text is not a command, auto-upload with caption
+
+  // If message has image and text is not a command, auto-run gemini with caption
   if (hasImage && imageUrl && messageText) {
-    // Check if message starts with command prefix
     const isCommand = messageText.startsWith(prefix);
     const [commandName] = isCommand 
       ? messageText.slice(prefix.length).split(' ')
@@ -80,26 +79,21 @@ const handleMessage = async (event, pageAccessToken) => {
     const normalizedCommand = commandName.toLowerCase();
     const command = commands.get(normalizedCommand);
     
-    // If it's a command, execute it
     if (command) {
       const args = messageText.split(' ').slice(1);
       await command.execute(senderId, args, pageAccessToken, imageUrl, event);
       return;
     }
     
-    // If it's not a command, auto-upload to imgbb with caption as prompt
-    console.log('Auto-uploading image with caption...');
-    const imgbbCommand = commands.get('imgbb');
-    if (imgbbCommand) {
-      await imgbbCommand.execute(senderId, [], pageAccessToken, imageUrl, event);
-      // Also send the caption as a separate message
-      await sendMessage(senderId, {
-        text: `${messageText}`
-      }, pageAccessToken);
+    // If not a command, auto-run gemini
+    console.log('[handleMessage] Auto-analyzing image with caption...');
+    const geminiCommand = commands.get('gemini');
+    if (geminiCommand) {
+      await geminiCommand.execute(senderId, [], pageAccessToken, event);
       return;
     }
   }
-  
+
   if (!messageText) return;
   
   const isCommand = messageText.startsWith(prefix);
@@ -113,12 +107,11 @@ const handleMessage = async (event, pageAccessToken) => {
     const command = commands.get(normalizedCommand);
     
     if (command) {
-      // Pass event to all commands
-      await command.execute(senderId, args, pageAccessToken, imageUrl, event);
+      await command.execute(senderId, args, pageAccessToken, event);
     } else if (commands.has('ai')) {
-      await commands.get('ai').execute(senderId, [messageText], pageAccessToken, event, sendMessage, imageCache);
+      await commands.get('ai').execute(senderId, [messageText], pageAccessToken, event);
     } else {
-      await sendMessage(senderId, { text: 'Unknown command. Type "help" for available commands.' }, pageAccessToken);
+      // Do nothing for non-command messages
     }
   } catch (error) {
     console.error('Command execution error:', error.message);
