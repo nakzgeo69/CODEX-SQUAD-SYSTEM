@@ -1,7 +1,6 @@
 const axios = require('axios');
 const { sendMessage } = require('../handles/sendMessage');
 
-// Master API List with Fallbacks
 const API_LIST = [
   'https://apiv-c7yb.onrender.com/api/gemini-vision',
   'https://betadash-api-swordslush-production.up.railway.app/opera',
@@ -22,21 +21,7 @@ module.exports = {
       let imageUrl = await extractImageUrl(event, token);
       const userPrompt = args.join(' ') || '';
 
-      // Detect if image contains math/sequence pattern
-      let isMathProblem = false;
-      let isSequenceProblem = false;
-
-      if (imageUrl) {
-        // Check if it's a sequence problem based on visual clues
-        // The image has numbers like 107, 101, 95, ..., -61
-        const imageAnalysis = await quickAnalyzeImage(imageUrl);
-        if (imageAnalysis.includes('sequence') || imageAnalysis.includes('arithmetic') || imageAnalysis.includes('107') || imageAnalysis.includes('101') || imageAnalysis.includes('95') || imageAnalysis.includes('-61')) {
-          isMathProblem = true;
-          isSequenceProblem = true;
-        }
-      }
-
-      let prompt = buildPrompt(userPrompt, isMathProblem, isSequenceProblem);
+      let prompt = buildPrompt(userPrompt);
 
       if (!imageUrl && !userPrompt) {
         await sendMessage(senderId, {
@@ -54,7 +39,6 @@ module.exports = {
       console.log('[gemini] Prompt:', prompt);
 
       let responseData = null;
-      let lastError = null;
 
       for (const apiUrl of API_LIST) {
         try {
@@ -102,16 +86,15 @@ module.exports = {
           }
         } catch (error) {
           console.error('[gemini] API failed:', apiUrl, error.message);
-          lastError = error;
           continue;
         }
       }
 
       if (responseData) {
-        let cleanResponse = cleanAndFormatResponse(responseData, userPrompt, isSequenceProblem);
+        let cleanResponse = cleanAndFormatResponse(responseData, userPrompt);
         
-        if (cleanResponse.length < 20 || cleanResponse.includes('displays') || cleanResponse.includes('appears') || cleanResponse.includes('general')) {
-          cleanResponse = await forceSolve(prompt, imageUrl, true);
+        if (cleanResponse.length < 20 || cleanResponse.includes('displays') || cleanResponse.includes('appears')) {
+          cleanResponse = await forceSolve(prompt, imageUrl);
         }
 
         const chunks = splitMessage(cleanResponse, 1900);
@@ -119,7 +102,7 @@ module.exports = {
           await sendMessage(senderId, { text: chunk }, token);
         }
       } else {
-        const fallbackResponse = await forceSolve(prompt, imageUrl, true);
+        const fallbackResponse = await forceSolve(prompt, imageUrl);
         const chunks = splitMessage(fallbackResponse, 1900);
         for (const chunk of chunks) {
           await sendMessage(senderId, { text: chunk }, token);
@@ -135,55 +118,34 @@ module.exports = {
   }
 };
 
-async function quickAnalyzeImage(imageUrl) {
-  try {
-    // Use a simple API to check if image contains numbers
-    const apiUrl = `https://betadash-api-swordslush-production.up.railway.app/opera?ask=${encodeURIComponent('What is in this image? List only the numbers visible.')}&imageurl=${encodeURIComponent(imageUrl)}`;
-    const response = await axios.get(apiUrl, {
-      timeout: 10000,
-      headers: { 'Accept': 'application/json' }
-    });
-    
-    if (response.data && response.data.message) {
-      return response.data.message.toLowerCase();
-    }
-  } catch (error) {
-    console.error('[quickAnalyzeImage] Error:', error.message);
-  }
-  return '';
-}
-
-function buildPrompt(userPrompt, isMathProblem, isSequenceProblem) {
+function buildPrompt(userPrompt) {
   const lowerPrompt = userPrompt.toLowerCase();
   
-  // Force sequence/math solving if detected
-  if (isSequenceProblem || lowerPrompt.includes('sequence') || lowerPrompt.includes('arithmetic')) {
-    return 'This is an arithmetic sequence problem. Solve it completely. Find the common difference, the number of terms, and provide the complete sequence. Show the formula used. Do not just describe. Remove all symbols like $, *, # from response. Use plain text only.';
-  }
-  
-  if (isMathProblem || lowerPrompt.includes('solve') || lowerPrompt.includes('compute') || lowerPrompt.includes('calculate')) {
-    return 'Solve this problem. Provide the complete solution with steps. Include the final answer. Do not just describe. Remove all symbols like $, *, # from response. Use plain text only.';
+  if (lowerPrompt.includes('solve') || lowerPrompt.includes('compute') || lowerPrompt.includes('calculate')) {
+    return 'Solve this problem. Provide the complete solution with steps. Include the final answer. Do not just describe. Use plain text only. No symbols.';
+  } else if (lowerPrompt.includes('sequence') || lowerPrompt.includes('pattern')) {
+    return 'Find the pattern and solve the sequence. Provide the complete sequence, formula, and final answer. Use plain text only. No symbols.';
   } else if (lowerPrompt.includes('sudoku') || lowerPrompt.includes('puzzle')) {
-    return 'Solve this puzzle completely. Provide the full solution. Do not just describe. Remove all symbols like $, *, # from response. Use plain text only.';
+    return 'Solve this puzzle completely. Provide the full solution. Use plain text only. No symbols.';
   } else if (lowerPrompt.includes('analyze') || lowerPrompt.includes('visualize')) {
-    return 'Analyze and visualize this image. Provide insights and description. Remove all symbols like $, *, # from response. Use plain text only.';
+    return 'Analyze and visualize this image. Provide insights and description. Use plain text only. No symbols.';
   } else if (lowerPrompt.includes('translate')) {
-    return 'Translate the text in this image. Provide only the translation. Remove all symbols like $, *, # from response. Use plain text only.';
+    return 'Translate the text in this image. Provide only the translation. Use plain text only. No symbols.';
   } else {
-    return 'Analyze this image. If it contains a math problem or sequence, solve it completely. If not, describe it. Remove all symbols like $, *, # from response. Use plain text only. Do not just describe.';
+    return 'Analyze and solve if applicable. Provide the complete solution with steps. Use plain text only. No symbols. Do not just describe.';
   }
 }
 
 async function handleTextOnly(senderId, prompt, token) {
   try {
-    const apiUrl = `https://betadash-api-swordslush-production.up.railway.app/opera?ask=${encodeURIComponent(prompt + ' Remove all symbols like $, *, # from response. Use plain text only.')}`;
+    const apiUrl = `https://betadash-api-swordslush-production.up.railway.app/opera?ask=${encodeURIComponent(prompt + ' Use plain text only. No symbols.')}`;
     const response = await axios.get(apiUrl, {
       timeout: 30000,
       headers: { 'Accept': 'application/json' }
     });
 
     if (response.data && response.data.message) {
-      let cleanResponse = cleanAndFormatResponse(response.data.message, prompt, false);
+      let cleanResponse = cleanAndFormatResponse(response.data.message, prompt);
       const chunks = splitMessage(cleanResponse, 1900);
       for (const chunk of chunks) {
         await sendMessage(senderId, { text: chunk }, token);
@@ -201,7 +163,7 @@ async function handleTextOnly(senderId, prompt, token) {
   }
 }
 
-function cleanAndFormatResponse(text, originalPrompt, isSequenceProblem) {
+function cleanAndFormatResponse(text, originalPrompt) {
   if (!text) return 'No response.';
 
   let cleaned = text
@@ -213,15 +175,11 @@ function cleanAndFormatResponse(text, originalPrompt, isSequenceProblem) {
     .replace(/~{2}/g, '')
     .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
     .replace(/\n{3,}/g, '\n\n')
+    .replace(/\$/g, '')
+    .replace(/[^a-zA-Z0-9\s\.,\-\!\?\:\;\'\"\(\)\%\=\+\/\*\n]/g, '')
     .trim();
 
-  // Remove $ signs
-  cleaned = cleaned.replace(/\$/g, '');
-
-  // Remove unusual characters
-  cleaned = cleaned.replace(/[^a-zA-Z0-9\s\.,\-\!\?\:\;\'\"\(\)\%\=\+\/\*]/g, '');
-
-  // Remove common "describe" phrases
+  // Remove describe phrases
   const describePhrases = [
     /^The image displays/i,
     /^Here's a breakdown/i,
@@ -248,18 +206,17 @@ function cleanAndFormatResponse(text, originalPrompt, isSequenceProblem) {
     }
   }
 
-  // If it's a sequence problem, format accordingly
-  if (isSequenceProblem || originalPrompt.toLowerCase().includes('sequence') || cleaned.includes('107') || cleaned.includes('101') || cleaned.includes('95')) {
-    cleaned = formatSequenceSolution(cleaned);
+  const lowerPrompt = originalPrompt.toLowerCase();
+  if (lowerPrompt.includes('sequence') || lowerPrompt.includes('solve') || lowerPrompt.includes('compute')) {
+    cleaned = formatMathSolution(cleaned);
   }
 
   return cleaned || 'No valid response.';
 }
 
-function formatSequenceSolution(text) {
+function formatMathSolution(text) {
   let formatted = 'SOLUTION\n\n';
   
-  // Extract numbers
   const numbers = text.match(/-?\d+/g);
   
   if (numbers && numbers.length >= 2) {
@@ -268,67 +225,55 @@ function formatSequenceSolution(text) {
     const diff = second - first;
     const last = parseInt(numbers[numbers.length - 1]);
     
-    formatted += 'Sequence: ' + numbers.join(', ') + '\n\n';
-    
-    if (!isNaN(diff)) {
-      formatted += 'Common Difference: ' + diff + '\n';
-      
-      if (!isNaN(last) && diff !== 0) {
-        const n = ((last - first) / diff) + 1;
-        if (Number.isInteger(n) && n > 0) {
-          formatted += 'Number of Terms: ' + n + '\n\n';
-          
-          // Generate full sequence
-          const fullSequence = [];
-          for (let i = 0; i < n; i++) {
-            fullSequence.push(first + (i * diff));
-          }
-          formatted += 'Full Sequence: ' + fullSequence.join(', ') + '\n\n';
+    if (!isNaN(diff) && diff !== 0) {
+      const n = ((last - first) / diff) + 1;
+      if (Number.isInteger(n) && n > 0) {
+        const fullSequence = [];
+        for (let i = 0; i < n; i++) {
+          fullSequence.push(first + (i * diff));
         }
+        formatted += 'Sequence: ' + fullSequence.join(', ') + '\n\n';
+        formatted += 'Common Difference: ' + diff + '\n';
+        formatted += 'Number of Terms: ' + n + '\n\n';
       }
     }
   }
   
-  // Add explanation
   const explanation = text.replace(/[\d,\s-]+/g, '').trim();
   if (explanation && explanation.length > 10) {
     formatted += 'EXPLANATION:\n' + explanation + '\n\n';
   }
   
-  // Add final answer
-  if (!text.includes('answer') && !text.includes('Answer')) {
-    const numbers2 = text.match(/-?\d+/g);
-    if (numbers2 && numbers2.length >= 2) {
-      const first2 = parseInt(numbers2[0]);
-      const last2 = parseInt(numbers2[numbers2.length - 1]);
-      const diff2 = parseInt(numbers2[1]) - parseInt(numbers2[0]);
-      if (!isNaN(first2) && !isNaN(last2) && !isNaN(diff2) && diff2 !== 0) {
-        const n2 = ((last2 - first2) / diff2) + 1;
-        if (Number.isInteger(n2) && n2 > 0) {
-          formatted += 'FINAL ANSWER:\n' + 'a = ' + first2 + ', d = ' + diff2 + ', n = ' + n2 + ', tn = ' + last2;
-        }
+  const numbers2 = text.match(/-?\d+/g);
+  if (numbers2 && numbers2.length >= 2) {
+    const first2 = parseInt(numbers2[0]);
+    const last2 = parseInt(numbers2[numbers2.length - 1]);
+    const diff2 = parseInt(numbers2[1]) - parseInt(numbers2[0]);
+    if (!isNaN(first2) && !isNaN(last2) && !isNaN(diff2) && diff2 !== 0) {
+      const n2 = ((last2 - first2) / diff2) + 1;
+      if (Number.isInteger(n2) && n2 > 0) {
+        formatted += 'FINAL ANSWER:\n';
+        formatted += 'First term: ' + first2 + '\n';
+        formatted += 'Common difference: ' + diff2 + '\n';
+        formatted += 'Number of terms: ' + n2 + '\n';
+        formatted += 'Last term: ' + last2;
       }
     }
   }
   
-  return formatted;
+  return formatted || text;
 }
 
-async function forceSolve(prompt, imageUrl, isSequence) {
+async function forceSolve(prompt, imageUrl) {
   try {
-    let forcePrompt = 'Solve this problem. Provide complete solution. Remove all symbols. Use plain text only. Do not describe.';
-    if (isSequence) {
-      forcePrompt = 'This is an arithmetic sequence problem. Solve it completely. Find the common difference, the number of terms, and provide the complete sequence. Show the formula. Remove all symbols. Use plain text only. Do not describe.';
-    }
-    
-    const apiUrl = `https://betadash-api-swordslush-production.up.railway.app/opera?ask=${encodeURIComponent(forcePrompt)}&imageurl=${encodeURIComponent(imageUrl)}`;
+    const apiUrl = `https://betadash-api-swordslush-production.up.railway.app/opera?ask=${encodeURIComponent('Solve this problem. Provide complete solution. Use plain text only. No symbols. Do not describe.')}&imageurl=${encodeURIComponent(imageUrl)}`;
     const response = await axios.get(apiUrl, {
       timeout: 30000,
       headers: { 'Accept': 'application/json' }
     });
 
     if (response.data && response.data.message) {
-      return cleanAndFormatResponse(response.data.message, 'solve', isSequence);
+      return cleanAndFormatResponse(response.data.message, 'solve');
     }
   } catch (error) {
     console.error('[gemini] Force solve failed:', error.message);
@@ -336,8 +281,6 @@ async function forceSolve(prompt, imageUrl, isSequence) {
   
   return 'Unable to solve. Please try again with a clearer image or text.';
 }
-
-// --- HELPER FUNCTIONS ---
 
 async function extractImageUrl(event, token) {
   try {
