@@ -20,32 +20,30 @@ module.exports = {
 
       console.log('[gemini] Processing image:', imageUrl);
 
-      // Detect puzzle type from args
       const userPrompt = args.join(' ').toLowerCase();
       let prompt = '';
 
+      // FORCE SOLVE - no analyze/describe only
       if (userPrompt.includes('sudoku') || userPrompt.includes('soduko')) {
-        prompt = 'This is a Sudoku puzzle. Solve it. Provide ONLY the solved grid in this format: Row 1: numbers, Row 2: numbers, etc. No explanations.';
-      } else if (userPrompt.includes('sequence') || userPrompt.includes('sequential')) {
-        prompt = 'Find the pattern and provide the next numbers in the sequence. Provide ONLY the answer. No explanations.';
+        prompt = 'IMPORTANT: This is a Sudoku puzzle. DO NOT just analyze or describe it. SOLVE it completely. Provide the FULL SOLVED GRID with Row 1 to Row 9. Then briefly explain the key steps. The answer must include the complete solved grid.';
+      } else if (userPrompt.includes('sequence') || userPrompt.includes('arithmetic')) {
+        prompt = 'IMPORTANT: This is an arithmetic sequence. DO NOT just analyze it. SOLVE it completely. Find the common difference, the number of terms, and provide the COMPLETE SEQUENCE. Show the formula and final answer.';
       } else if (userPrompt.includes('math') || userPrompt.includes('equation')) {
-        prompt = 'Solve this math problem. Provide ONLY the final answer. No explanations.';
+        prompt = 'IMPORTANT: This is a math problem. DO NOT just analyze it. SOLVE it completely. Show the solution steps and provide the FINAL ANSWER.';
       } else if (userPrompt.includes('logic')) {
-        prompt = 'Solve this logic puzzle. Provide ONLY the final answer. No explanations.';
+        prompt = 'IMPORTANT: This is a logic puzzle. DO NOT just analyze it. SOLVE it completely. Explain the reasoning and provide the FINAL ANSWER.';
       } else if (userPrompt.includes('pattern')) {
-        prompt = 'Find the next item in the pattern. Provide ONLY the answer. No explanations.';
+        prompt = 'IMPORTANT: This is a pattern puzzle. DO NOT just analyze it. SOLVE it completely. Find the pattern and provide the NEXT ITEMS.';
       } else {
-        prompt = 'Analyze this image. Provide a direct, concise answer. No explanations.';
+        prompt = 'IMPORTANT: DO NOT just analyze or describe this image. If it is a puzzle, SOLVE it and provide the COMPLETE SOLUTION. If it is a question, ANSWER it directly. Provide the FINAL ANSWER.';
       }
 
       const encodedPrompt = encodeURIComponent(prompt);
       const encodedImageUrl = encodeURIComponent(imageUrl);
-      
-      // Use faster API endpoint
       const apiUrl = `https://norch-project.gleeze.com/api/gemini?prompt=${encodedPrompt}&imageurl=${encodedImageUrl}`;
 
       const response = await axios.get(apiUrl, {
-        timeout: 30000, // Reduced from 60s to 30s
+        timeout: 60000,
         headers: {
           'Accept': 'application/json'
         }
@@ -56,17 +54,19 @@ module.exports = {
         
         let cleanResponse = data.response || 'No response from Gemini API.';
         
-        // Clean the response
+        // Remove unnecessary text but keep solution
         cleanResponse = cleanResponse
           .replace(/^I'm a Gemini.*?model.*?\n\n?/i, '')
-          .replace(/^Here is.*?\n/i, '')
-          .replace(/^The image displays.*?\n/i, '')
-          .replace(/^Initial Observations.*?\n/i, '')
-          .replace(/^Analyzing Potential.*?\n/i, '')
-          .replace(/^Testing the Core.*?\n/i, '')
-          .replace(/^Conclusion.*?\n/i, '')
-          .replace(/^Therefore.*?\n/i, '')
-          .replace(/^\*\*/g, '')
+          .replace(/^Here is my analysis.*?\n/i, '')
+          .replace(/^Let me analyze.*?\n/i, '')
+          .replace(/^The image appears to be.*?\n/i, '')
+          .replace(/^Based on my analysis.*?\n/i, '')
+          .replace(/^I can see that.*?\n/i, '')
+          .replace(/^This looks like.*?\n/i, '')
+          .replace(/^Upon examination.*?\n/i, '')
+          .replace(/^After analyzing.*?\n/i, '')
+          .replace(/^The image shows.*?\n/i, '')
+          .replace(/^This is a.*?\n/i, '')
           .replace(/\*\*/g, '')
           .replace(/\*/g, '')
           .replace(/#{1,6}\s/g, '')
@@ -77,15 +77,18 @@ module.exports = {
           .replace(/\n{3,}/g, '\n\n')
           .trim();
 
-        // Format response based on puzzle type
+        // Force format for specific puzzle types with full solution
         if (userPrompt.includes('sudoku')) {
-          cleanResponse = formatSudokuResponse(cleanResponse);
+          cleanResponse = forceSudokuSolution(cleanResponse);
         } else if (userPrompt.includes('sequence')) {
-          cleanResponse = formatSequenceResponse(cleanResponse);
+          cleanResponse = forceSequenceSolution(cleanResponse);
+        } else {
+          // For other types, ensure there's a final answer
+          cleanResponse = ensureFinalAnswer(cleanResponse);
         }
 
-        if (!cleanResponse) {
-          cleanResponse = 'No valid response from Gemini API.';
+        if (!cleanResponse || cleanResponse.length < 10) {
+          cleanResponse = 'Unable to solve. Please try again with a clearer image.';
         }
 
         const chunks = splitMessage(cleanResponse, 1900);
@@ -103,7 +106,7 @@ module.exports = {
       let errorMessage = 'Error analyzing image. ';
       
       if (error.code === 'ECONNABORTED' || error.message.includes('timeout')) {
-        errorMessage = 'The image is too large or the server is taking too long. Please try compressing the image or using a smaller file.';
+        errorMessage = 'The image is too large or the server is taking too long. Please try compressing the image.';
       } else if (error.response?.status === 400) {
         errorMessage = 'Invalid image format. Please send a valid image.';
       } else if (error.response?.status === 500) {
@@ -159,40 +162,77 @@ async function getRepliedImage(mid, token) {
   }
 }
 
-function formatSudokuResponse(text) {
-  // Extract numbers from text
+function forceSudokuSolution(text) {
+  let formatted = 'SOLVED SUDOKU\n\n';
+  
+  // Extract all numbers from text
   const numbers = text.match(/\d+/g);
+  
   if (numbers && numbers.length >= 81) {
-    let formatted = 'Solved Sudoku:\n\n';
+    formatted += 'COMPLETE SOLUTION:\n';
     for (let i = 0; i < 9; i++) {
       const row = numbers.slice(i * 9, (i + 1) * 9);
-      formatted += 'Row ' + (i + 1) + ': ' + row.join(' ') + '\n';
+      formatted += 'Row ' + (i + 1) + ': ' + row.join('  ') + '\n';
     }
-    return formatted;
+    formatted += '\n';
+    
+    // Extract any explanation
+    const explanation = text.replace(/[\d\s]+/g, '').trim();
+    if (explanation && explanation.length > 10) {
+      formatted += 'EXPLANATION:\n' + explanation.substring(0, 300) + '\n';
+    }
+  } else {
+    // If no grid found, return the cleaned text
+    formatted += text;
   }
-  return text;
+  
+  return formatted;
 }
 
-function formatSequenceResponse(text) {
-  // Extract sequence numbers
+function forceSequenceSolution(text) {
+  let formatted = 'SEQUENCE SOLUTION\n\n';
+  
+  // Extract numbers
   const numbers = text.match(/-?\d+/g);
-  if (numbers && numbers.length > 0) {
-    let formatted = 'Sequence Solution:\n\n';
-    formatted += 'Numbers: ' + numbers.join(', ') + '\n';
+  
+  if (numbers && numbers.length >= 2) {
+    formatted += 'COMPLETE SEQUENCE:\n' + numbers.join(', ') + '\n\n';
     
-    // Try to find pattern
-    if (numbers.length >= 3) {
-      const diff1 = parseInt(numbers[1]) - parseInt(numbers[0]);
-      const diff2 = parseInt(numbers[2]) - parseInt(numbers[1]);
-      if (diff1 === diff2) {
-        const next = parseInt(numbers[numbers.length - 1]) + diff1;
-        formatted += 'Pattern: Add ' + diff1 + ' each step\n';
-        formatted += 'Next number: ' + next;
-      } else {
-        formatted += 'Pattern: ' + text;
+    // Find pattern
+    const diff = parseInt(numbers[1]) - parseInt(numbers[0]);
+    if (!isNaN(diff)) {
+      formatted += 'Common Difference: ' + diff + '\n';
+      formatted += 'Number of Terms: ' + numbers.length + '\n';
+      
+      // Next terms
+      if (numbers.length >= 2) {
+        const last = parseInt(numbers[numbers.length - 1]);
+        const next1 = last + diff;
+        const next2 = next1 + diff;
+        const next3 = next2 + diff;
+        formatted += 'Next Terms: ' + next1 + ', ' + next2 + ', ' + next3 + '\n';
       }
     }
-    return formatted;
+    
+    // Extract explanation
+    const explanation = text.replace(/[\d,\s-]+/g, '').trim();
+    if (explanation && explanation.length > 10) {
+      formatted += '\nEXPLANATION:\n' + explanation.substring(0, 300);
+    }
+  } else {
+    formatted += text;
+  }
+  
+  return formatted;
+}
+
+function ensureFinalAnswer(text) {
+  // If text doesn't have a clear answer, try to extract one
+  if (!text.includes('answer') && !text.includes('solution') && !text.includes('result')) {
+    const numbers = text.match(/-?\d+/g);
+    if (numbers && numbers.length > 0) {
+      return 'ANSWER:\n' + text + '\n\nFinal Answer: ' + numbers.join(', ');
+    }
   }
   return text;
 }
