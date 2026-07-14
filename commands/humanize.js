@@ -2,20 +2,43 @@ const axios = require('axios');
 const { sendMessage } = require('../handles/sendMessage');
 
 module.exports = {
-  name: 'humanize',
-  description: '50/50 AI-Human hybrid text transformer',
-  usage: 'humanize [text]',
-  author: '0xcodex',
+  name: ['humanize', 'human'],
+  description: 'Transform AI text to human-like response',
+  usage: 'humanize [text or reply to AI response]',
+  version: '1.0.0',
+  author: 'codex',
+  category: 'AI',
+  cooldown: 5,
 
-  async execute(senderId, args, token) {
-    const message = args.join(' ').trim() || 'hai';
-
+  async execute(senderId, args, token, event) {
     try {
-      // Step 1: Get AI response
+      let text = args.join(' ').trim();
+
+      // Check if replying to a message
+      if (!text && event?.message?.reply_to?.mid) {
+        const repliedMessage = await getRepliedMessage(event.message.reply_to.mid, token);
+        if (repliedMessage) {
+          text = repliedMessage;
+          console.log('[humanize] Using replied message:', text);
+        }
+      }
+
+      if (!text) {
+        await sendMessage(senderId, {
+          text: 'Usage: humanize [text] or reply to an AI response'
+        }, token);
+        return;
+      }
+
+      await sendMessage(senderId, {
+        text: ''
+      }, token);
+
+      // Call humanize API
       const { data } = await axios.get(
         'https://betadash-api-swordslush-production.up.railway.app/humanize',
         {
-          params: { text: message },
+          params: { text: text },
           timeout: 15000
         }
       );
@@ -24,130 +47,68 @@ module.exports = {
         throw new Error('API returned error');
       }
 
-      let aiResponse = data.message || data.message2 || 'No response received';
-      
-      // Step 2: Hybrid humanization (50% AI, 50% human touch)
-      aiResponse = await hybridHumanize(aiResponse);
-      
-      await sendChunks(senderId, aiResponse, token);
+      let response = data.message || data.message2 || 'No response received';
+      response = cleanResponse(response);
+
+      await sendChunks(senderId, response, token);
 
     } catch (error) {
-      console.error(`[humanize] Failed: ${error.message}`);
+      console.error('[humanize] Error:', error.message);
       await sendMessage(senderId, {
-        text: '⚠️ Error processing text. Please try again.'
+        text: 'Server error. Please try again later.'
       }, token);
     }
   }
 };
 
-// ===== HYBRID HUMANIZATION ENGINE =====
-async function hybridHumanize(text) {
-  // 50% AI STRUCTURE (clean, logical)
-  // 50% HUMAN FLAVOR (natural, conversational)
-  
-  // --- PHASE 1: Keep AI's logical structure (50%) ---
-  let hybrid = text;
-  
-  // Preserve core meaning and structure
-  hybrid = hybrid.replace(/\b(additionally|furthermore|moreover)\b/gi, '');
-  
-  // --- PHASE 2: Add human elements (50%) ---
-  
-  // 2.1 Natural sentence starters
-  const starters = [
-    'Well, ', 'You know, ', 'Honestly, ', 'Basically, ', 
-    'I mean, ', 'Look, ', 'The thing is, ', 'To be fair, '
-  ];
-  
-  let sentences = hybrid.split('. ');
-  for (let i = 0; i < sentences.length; i++) {
-    // Add human flavor to 50% of sentences
-    if (i % 2 === 0 && sentences[i].length > 15) {
-      const starter = starters[Math.floor(Math.random() * starters.length)];
-      sentences[i] = starter + sentences[i].toLowerCase();
-    }
+async function getRepliedMessage(mid, token) {
+  try {
+    const url = `https://graph.facebook.com/v21.0/${mid}`;
+    const params = {
+      access_token: token,
+      fields: 'message'
+    };
+    const { data } = await axios.get(url, { params });
+    return data?.message || null;
+  } catch (error) {
+    console.error('[getRepliedMessage] Error:', error.message);
+    return null;
   }
-  hybrid = sentences.join('. ');
-  
-  // 2.2 Human vocabulary mix (50% casual, 50% formal)
-  const humanVocab = {
-    'characterized by': ['is all about', 'means', 'involves'],
-    'manifest in': ['show up as', 'appear through', 'come across as'],
-    'influenced by': ['shaped by', 'affected by', 'depends on'],
-    'associated with': ['linked to', 'connected with', 'related to'],
-    'considered a': ['seen as a', 'viewed as a', 'regarded as a'],
-    'fundamental': ['basic', 'core', 'essential'],
-    'overall': ['general', 'overall', 'in general'],
-    'various': ['different', 'multiple', 'several'],
-    'such as': ['like', 'including', 'for example'],
-    'external circumstances': ['outside factors', 'what happens around us'],
-    'personal achievements': ['your own wins', 'personal successes'],
-    'relationships': ['connections', 'bonds', 'ties'],
-    'intrinsic factors': ['inner traits', 'personal qualities']
-  };
-  
-  // Apply to 50% of occurrences
-  for (const [formal, alternates] of Object.entries(humanVocab)) {
-    if (Math.random() > 0.5) { // 50% chance
-      const replacement = alternates[Math.floor(Math.random() * alternates.length)];
-      hybrid = hybrid.replace(new RegExp('\\b' + formal + '\\b', 'gi'), replacement);
-    }
-  }
-  
-  // 2.3 Human-sounding transitions
-  const transitions = [
-    'and you know what? ', 'plus, ', 'also, ', 'not to mention, ',
-    'what\'s interesting is ', 'the thing about it is '
-  ];
-  
-  // Insert in 50% of appropriate places
-  let parts = hybrid.split('. ');
-  for (let i = 1; i < parts.length; i += 2) { // Every other sentence
-    if (parts[i].length > 10) {
-      const transition = transitions[Math.floor(Math.random() * transitions.length)];
-      parts[i] = transition + parts[i].toLowerCase();
-    }
-  }
-  hybrid = parts.join('. ');
-  
-  // 2.4 Human punctuation variation
-  hybrid = hybrid.replace(/\. /g, (match) => {
-    const choices = ['. ', '. ', '. ', '! ', '. ', '? ', '. '];
-    return choices[Math.floor(Math.random() * choices.length)];
-  });
-  
-  // 2.5 Add human hesitation (50% chance)
-  if (Math.random() > 0.5) {
-    const hesitations = ['um, ', 'uh, ', 'like, ', 'you know, '];
-    const idx = Math.floor(Math.random() * hesitations.length);
-    const pos = Math.floor(hybrid.length * 0.3);
-    hybrid = hybrid.slice(0, pos) + hesitations[idx] + hybrid.slice(pos);
-  }
-  
-  // 2.6 Natural sentence length variation
-  let words = hybrid.split(' ');
-  for (let i = 0; i < words.length; i += 20) {
-    if (i > 0 && i < words.length - 5 && Math.random() > 0.6) {
-      words[i] = words[i] + '.';
-    }
-  }
-  hybrid = words.join(' ');
-  
-  // --- PHASE 3: Polish for fluency ---
-  hybrid = hybrid.replace(/\s+/g, ' ').trim();
-  hybrid = hybrid.replace(/\.\./g, '.');
-  hybrid = hybrid.replace(/!\./g, '!');
-  hybrid = hybrid.replace(/\?\./g, '?');
-  
-  // Capitalize first letter
-  hybrid = hybrid.charAt(0).toUpperCase() + hybrid.slice(1);
-  
-  return hybrid;
 }
 
-const MAX_CHUNK = 1900;
+function cleanResponse(text) {
+  if (!text) return 'No response.';
+
+  let cleaned = text.trim();
+
+  cleaned = cleaned.replace(/\*\*(.+?)\*\*/g, '$1');
+  cleaned = cleaned.replace(/\*(.+?)\*/g, '$1');
+  cleaned = cleaned.replace(/#{1,6}\s*/g, '');
+  cleaned = cleaned.replace(/---+/g, '');
+  cleaned = cleaned.replace(/__/g, '');
+  cleaned = cleaned.replace(/_/g, '');
+  cleaned = cleaned.replace(/`/g, '');
+  cleaned = cleaned.replace(/```/g, '');
+  cleaned = cleaned.replace(/~~/g, '');
+  cleaned = cleaned.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');
+  cleaned = cleaned.replace(/\n{3,}/g, '\n\n');
+  cleaned = cleaned.replace(/[ \t]+/g, ' ');
+
+  cleaned = cleaned.replace(/[\u{1F000}-\u{1FFFF}]/gu, '');
+  cleaned = cleaned.replace(/[\u{2600}-\u{27BF}]/gu, '');
+  cleaned = cleaned.replace(/[\u{FE00}-\u{FEFF}]/gu, '');
+  cleaned = cleaned.replace(/[\u{1F600}-\u{1F64F}]/gu, '');
+  cleaned = cleaned.replace(/[\u{1F300}-\u{1F5FF}]/gu, '');
+  cleaned = cleaned.replace(/[\u{1F680}-\u{1F6FF}]/gu, '');
+  cleaned = cleaned.replace(/[\u{2700}-\u{27BF}]/gu, '');
+
+  cleaned = cleaned.trim();
+
+  return cleaned || 'No response.';
+}
 
 function splitMessage(text) {
+  const MAX_CHUNK = 1900;
   const chunks = [];
   for (let i = 0; i < text.length; i += MAX_CHUNK) {
     chunks.push(text.slice(i, i + MAX_CHUNK));
