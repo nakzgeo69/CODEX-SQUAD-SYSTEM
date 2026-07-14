@@ -41,7 +41,6 @@ const handleMessage = async (event, pageAccessToken) => {
   const messageText = event?.message?.text?.trim();
   const attachments = event?.message?.attachments || [];
   
-  // Check if message has an image attachment
   let imageUrl = null;
   let hasImage = false;
   
@@ -59,7 +58,6 @@ const handleMessage = async (event, pageAccessToken) => {
     }
   }
 
-  // If message has image and no text command, auto-run gemini
   if (hasImage && imageUrl && !messageText) {
     console.log('[handleMessage] Auto-analyzing image with gemini...');
     const geminiCommand = commands.get('gemini');
@@ -69,7 +67,6 @@ const handleMessage = async (event, pageAccessToken) => {
     }
   }
 
-  // If message has image and text is not a command, auto-run gemini with caption
   if (hasImage && imageUrl && messageText) {
     const isCommand = messageText.startsWith(prefix);
     const [commandName] = isCommand 
@@ -81,11 +78,10 @@ const handleMessage = async (event, pageAccessToken) => {
     
     if (command) {
       const args = messageText.split(' ').slice(1);
-      await command.execute(senderId, args, pageAccessToken, imageUrl, event);
+      await command.execute(senderId, args, pageAccessToken, event);
       return;
     }
     
-    // If not a command, auto-run gemini
     console.log('[handleMessage] Auto-analyzing image with caption...');
     const geminiCommand = commands.get('gemini');
     if (geminiCommand) {
@@ -110,8 +106,6 @@ const handleMessage = async (event, pageAccessToken) => {
       await command.execute(senderId, args, pageAccessToken, event);
     } else if (commands.has('ai')) {
       await commands.get('ai').execute(senderId, [messageText], pageAccessToken, event);
-    } else {
-      // Do nothing for non-command messages
     }
   } catch (error) {
     console.error('Command execution error:', error.message);
