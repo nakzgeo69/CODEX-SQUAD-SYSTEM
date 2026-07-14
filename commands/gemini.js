@@ -3,9 +3,9 @@ const { sendMessage } = require('../handles/sendMessage');
 
 module.exports = {
   name: ['gemini'],
-  description: 'Auto-analyze images using Gemini AI',
+  description: 'Auto-analyze images and solve puzzles using Gemini AI',
   usage: 'Send an image and the bot will auto-analyze it',
-  version: '1.0.0',
+  version: '2.0.0',
   author: 'codex',
   category: 'AI',
   cooldown: 5,
@@ -20,8 +20,24 @@ module.exports = {
 
       console.log('[gemini] Processing image:', imageUrl);
 
+      // Detect if it's a puzzle based on args or image content
+      let prompt = 'Analyze this image';
+      
+      // Check if user specified a puzzle type
+      const userPrompt = args.join(' ').toLowerCase();
+      if (userPrompt.includes('sudoku') || userPrompt.includes('puzzle') || userPrompt.includes('solve')) {
+        prompt = 'Solve this puzzle. Identify the numbers and provide the complete solution.';
+      } else if (userPrompt.includes('math') || userPrompt.includes('equation')) {
+        prompt = 'Solve this math equation and provide the answer.';
+      } else if (userPrompt.includes('translate')) {
+        prompt = 'Translate the text in this image to English.';
+      } else if (userPrompt.includes('identify') || userPrompt.includes('what is')) {
+        prompt = 'Identify what is in this image and describe it in detail.';
+      }
+
+      const encodedPrompt = encodeURIComponent(prompt);
       const encodedImageUrl = encodeURIComponent(imageUrl);
-      const apiUrl = `https://norch-project.gleeze.com/api/gemini?prompt=Analyze%20this%20image&imageurl=${encodedImageUrl}`;
+      const apiUrl = `https://norch-project.gleeze.com/api/gemini?prompt=${encodedPrompt}&imageurl=${encodedImageUrl}`;
 
       const response = await axios.get(apiUrl, {
         timeout: 60000,
@@ -49,6 +65,11 @@ module.exports = {
 
         if (!cleanResponse) {
           cleanResponse = 'No valid response from Gemini API.';
+        }
+
+        // Add formatting for puzzle solutions
+        if (userPrompt.includes('sudoku') || userPrompt.includes('puzzle')) {
+          cleanResponse = formatPuzzleResponse(cleanResponse);
         }
 
         const chunks = splitMessage(cleanResponse, 1900);
@@ -120,6 +141,27 @@ async function getRepliedImage(mid, token) {
     console.error('[Replied Image] Failed:', err.response?.data || err.message);
     return null;
   }
+}
+
+function formatPuzzleResponse(text) {
+  // Try to extract grid/numbers from response
+  const lines = text.split('\n');
+  let formatted = '';
+  let gridStarted = false;
+  
+  for (const line of lines) {
+    // Check if line contains numbers in a grid pattern
+    if (line.match(/\d+\s+\d+\s+\d+\s+\d+/)) {
+      gridStarted = true;
+      formatted += line + '\n';
+    } else if (gridStarted && line.trim() === '') {
+      gridStarted = false;
+    } else if (!gridStarted) {
+      formatted += line + '\n';
+    }
+  }
+  
+  return formatted || text;
 }
 
 function splitMessage(text, maxLength) {
