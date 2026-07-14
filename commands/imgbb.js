@@ -42,9 +42,9 @@ module.exports = {
         const imageLink = response.data.imageUrl;
         const viewerLink = response.data.viewerUrl || imageLink;
 
-        let replyText = 'Upload Successful\n\n';
-        replyText += `Image Link: ${imageLink}\n`;
-        replyText += `Viewer Link: ${viewerLink}`;
+        let replyText = '\n';
+        replyText += `${imageLink}\n`;
+        replyText += `${viewerLink}`;
 
         await sendMessage(senderId, {
           text: replyText
