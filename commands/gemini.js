@@ -3,8 +3,8 @@ const { sendMessage } = require('../handles/sendMessage');
 
 module.exports = {
   name: ['gemini'],
-  description: 'Analyze images using Gemini AI',
-  usage: 'gemini [prompt] (with image attachment)',
+  description: 'Auto-analyze images using Gemini AI',
+  usage: 'Send an image and the bot will auto-analyze it',
   version: '1.0.0',
   author: 'codex',
   category: 'AI',
@@ -12,38 +12,21 @@ module.exports = {
 
   async execute(senderId, args, token, event) {
     try {
-      // Get prompt from args
-      let prompt = args.join(' ').trim() || 'Analyze this image';
-      
       // Extract image URL from event
       let imageUrl = await extractImageUrl(event, token);
-      
-      // Check if prompt contains image URL (fallback)
-      if (!imageUrl) {
-        const urlMatch = prompt.match(/(https?:\/\/[^\s]+\.(?:jpg|jpeg|png|gif|webp|bmp|svg|ibb\.co))/i);
-        if (urlMatch) {
-          imageUrl = urlMatch[0];
-          prompt = prompt.replace(urlMatch[0], '').trim() || 'Analyze this image';
-        }
-      }
 
       if (!imageUrl) {
-        await sendMessage(senderId, {
-          text: 'Usage: gemini [prompt] with an image attachment'
-        }, token);
         return;
       }
 
       console.log('[gemini] Processing image:', imageUrl);
-      console.log('[gemini] Prompt:', prompt);
 
       await sendMessage(senderId, {
         text: ''
       }, token);
 
-      const encodedPrompt = encodeURIComponent(prompt);
       const encodedImageUrl = encodeURIComponent(imageUrl);
-      const apiUrl = `https://norch-project.gleeze.com/api/gemini?prompt=${encodedPrompt}&imageurl=${encodedImageUrl}`;
+      const apiUrl = `https://norch-project.gleeze.com/api/gemini?prompt=Analyze%20this%20image&imageurl=${encodedImageUrl}`;
 
       const response = await axios.get(apiUrl, {
         timeout: 60000,
@@ -69,14 +52,9 @@ module.exports = {
           .replace(/\n{3,}/g, '\n\n')
           .trim();
         
-        if (cleanResponse.length > 2000) {
-          const chunks = splitMessage(cleanResponse);
-          for (const chunk of chunks) {
-            await sendMessage(senderId, { text: chunk }, token);
-          }
-        } else {
-          await sendMessage(senderId, { text: cleanResponse }, token);
-        }
+        await sendMessage(senderId, {
+          text: cleanResponse
+        }, token);
         
       } else {
         throw new Error('Invalid response from Gemini API');
@@ -106,12 +84,10 @@ module.exports = {
 
 async function extractImageUrl(event, token) {
   try {
-    // Check if replying to an image
     if (event?.message?.reply_to?.mid) {
       return await getRepliedImage(event.message.reply_to.mid, token);
     } 
     
-    // Check if message has image attachment
     if (event?.message?.attachments && event.message.attachments.length > 0) {
       for (const attachment of event.message.attachments) {
         if (attachment.type === 'image' || attachment.type === 'photo') {
@@ -142,26 +118,4 @@ async function getRepliedImage(mid, token) {
     console.error('[Replied Image] Failed:', err.response?.data || err.message);
     return null;
   }
-}
-
-function splitMessage(text) {
-  const maxLength = 2000;
-  const chunks = [];
-  let currentChunk = '';
-  
-  const lines = text.split('\n');
-  for (const line of lines) {
-    if (currentChunk.length + line.length + 1 > maxLength) {
-      chunks.push(currentChunk.trim());
-      currentChunk = line + '\n';
-    } else {
-      currentChunk += line + '\n';
-    }
-  }
-  
-  if (currentChunk.trim()) {
-    chunks.push(currentChunk.trim());
-  }
-  
-  return chunks;
 }
