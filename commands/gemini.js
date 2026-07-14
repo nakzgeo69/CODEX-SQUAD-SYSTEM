@@ -122,23 +122,23 @@ function buildPrompt(userPrompt) {
   const lowerPrompt = userPrompt.toLowerCase();
   
   if (lowerPrompt.includes('solve') || lowerPrompt.includes('compute') || lowerPrompt.includes('calculate')) {
-    return 'Solve this problem. Provide the complete solution with steps. Include the final answer. Do not just describe. Use plain text only. No symbols.';
+    return 'Solve this problem. Provide the complete solution with steps. Include the final answer. Do not just describe. Use plain text only. No symbols. Provide only the solution, no duplicate text.';
   } else if (lowerPrompt.includes('sequence') || lowerPrompt.includes('pattern')) {
-    return 'Find the pattern and solve the sequence. Provide the complete sequence, formula, and final answer. Use plain text only. No symbols.';
+    return 'Find the pattern and solve the sequence. Provide the complete sequence, formula, and final answer. Use plain text only. No symbols. Provide only the solution, no duplicate text.';
   } else if (lowerPrompt.includes('sudoku') || lowerPrompt.includes('puzzle')) {
-    return 'Solve this puzzle completely. Provide the full solution. Use plain text only. No symbols.';
+    return 'Solve this puzzle completely. Provide the full solution. Use plain text only. No symbols. Provide only the solution, no duplicate text.';
   } else if (lowerPrompt.includes('analyze') || lowerPrompt.includes('visualize')) {
-    return 'Analyze and visualize this image. Provide insights and description. Use plain text only. No symbols.';
+    return 'Analyze and visualize this image. Provide insights and description. Use plain text only. No symbols. Provide only the analysis, no duplicate text.';
   } else if (lowerPrompt.includes('translate')) {
-    return 'Translate the text in this image. Provide only the translation. Use plain text only. No symbols.';
+    return 'Translate the text in this image. Provide only the translation. Use plain text only. No symbols. Provide only the translation, no duplicate text.';
   } else {
-    return 'Analyze and solve if applicable. Provide the complete solution with steps. Use plain text only. No symbols. Do not just describe.';
+    return 'Analyze and solve if applicable. Provide the complete solution with steps. Use plain text only. No symbols. Do not just describe. Provide only the solution, no duplicate text.';
   }
 }
 
 async function handleTextOnly(senderId, prompt, token) {
   try {
-    const apiUrl = `https://betadash-api-swordslush-production.up.railway.app/opera?ask=${encodeURIComponent(prompt + ' Use plain text only. No symbols.')}`;
+    const apiUrl = `https://betadash-api-swordslush-production.up.railway.app/opera?ask=${encodeURIComponent(prompt + ' Use plain text only. No symbols. Provide only the answer, no duplicate text.')}`;
     const response = await axios.get(apiUrl, {
       timeout: 30000,
       headers: { 'Accept': 'application/json' }
@@ -179,6 +179,20 @@ function cleanAndFormatResponse(text, originalPrompt) {
     .replace(/[^a-zA-Z0-9\s\.,\-\!\?\:\;\'\"\(\)\%\=\+\/\*\n]/g, '')
     .trim();
 
+  // Remove duplicate explanations
+  const lines = cleaned.split('\n');
+  const uniqueLines = [];
+  const seen = new Set();
+  
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (trimmed && !seen.has(trimmed) && trimmed.length > 5) {
+      seen.add(trimmed);
+      uniqueLines.push(line);
+    }
+  }
+  cleaned = uniqueLines.join('\n');
+
   // Remove describe phrases
   const describePhrases = [
     /^The image displays/i,
@@ -195,7 +209,9 @@ function cleanAndFormatResponse(text, originalPrompt) {
     /^Solve for n/i,
     /^Complete Solution/i,
     /^Visualization/i,
-    /^Your request is general/i
+    /^Your request is general/i,
+    /^Here is the complete solution/i,
+    /^Explanation:/i
   ];
 
   for (const phrase of describePhrases) {
@@ -204,6 +220,12 @@ function cleanAndFormatResponse(text, originalPrompt) {
       cleaned = cleaned.trim();
       break;
     }
+  }
+
+  // Remove duplicate "Explanation" sections
+  const explanationMatch = cleaned.match(/(EXPLANATION:[\s\S]*?)(?=EXPLANATION:|$)/i);
+  if (explanationMatch) {
+    cleaned = cleaned.replace(/EXPLANATION:[\s\S]*?EXPLANATION:/i, 'EXPLANATION:');
   }
 
   const lowerPrompt = originalPrompt.toLowerCase();
@@ -225,7 +247,7 @@ function formatMathSolution(text) {
     const diff = second - first;
     const last = parseInt(numbers[numbers.length - 1]);
     
-    if (!isNaN(diff) && diff !== 0) {
+    if (!isNaN(diff) && diff !== 0 && !isNaN(last)) {
       const n = ((last - first) / diff) + 1;
       if (Number.isInteger(n) && n > 0) {
         const fullSequence = [];
@@ -241,7 +263,9 @@ function formatMathSolution(text) {
   
   const explanation = text.replace(/[\d,\s-]+/g, '').trim();
   if (explanation && explanation.length > 10) {
-    formatted += 'EXPLANATION:\n' + explanation + '\n\n';
+    // Remove duplicate explanation text
+    const uniqueExplanation = explanation.split('\n').filter((v, i, a) => a.indexOf(v) === i).join('\n');
+    formatted += 'EXPLANATION:\n' + uniqueExplanation + '\n\n';
   }
   
   const numbers2 = text.match(/-?\d+/g);
@@ -261,12 +285,27 @@ function formatMathSolution(text) {
     }
   }
   
+  // Remove duplicate sections
+  const sections = formatted.split('\n\n');
+  const uniqueSections = [];
+  const sectionSet = new Set();
+  
+  for (const section of sections) {
+    const trimmed = section.trim();
+    if (trimmed && !sectionSet.has(trimmed)) {
+      sectionSet.add(trimmed);
+      uniqueSections.push(section);
+    }
+  }
+  
+  formatted = uniqueSections.join('\n\n');
+  
   return formatted || text;
 }
 
 async function forceSolve(prompt, imageUrl) {
   try {
-    const apiUrl = `https://betadash-api-swordslush-production.up.railway.app/opera?ask=${encodeURIComponent('Solve this problem. Provide complete solution. Use plain text only. No symbols. Do not describe.')}&imageurl=${encodeURIComponent(imageUrl)}`;
+    const apiUrl = `https://betadash-api-swordslush-production.up.railway.app/opera?ask=${encodeURIComponent('Solve this problem. Provide complete solution. Use plain text only. No symbols. Do not describe. Provide only the solution, no duplicate text.')}&imageurl=${encodeURIComponent(imageUrl)}`;
     const response = await axios.get(apiUrl, {
       timeout: 30000,
       headers: { 'Accept': 'application/json' }
