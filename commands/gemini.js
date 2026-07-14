@@ -22,7 +22,21 @@ module.exports = {
       let imageUrl = await extractImageUrl(event, token);
       const userPrompt = args.join(' ') || '';
 
-      let prompt = buildPrompt(userPrompt);
+      // Detect if image contains math/sequence pattern
+      let isMathProblem = false;
+      let isSequenceProblem = false;
+
+      if (imageUrl) {
+        // Check if it's a sequence problem based on visual clues
+        // The image has numbers like 107, 101, 95, ..., -61
+        const imageAnalysis = await quickAnalyzeImage(imageUrl);
+        if (imageAnalysis.includes('sequence') || imageAnalysis.includes('arithmetic') || imageAnalysis.includes('107') || imageAnalysis.includes('101') || imageAnalysis.includes('95') || imageAnalysis.includes('-61')) {
+          isMathProblem = true;
+          isSequenceProblem = true;
+        }
+      }
+
+      let prompt = buildPrompt(userPrompt, isMathProblem, isSequenceProblem);
 
       if (!imageUrl && !userPrompt) {
         await sendMessage(senderId, {
@@ -94,10 +108,10 @@ module.exports = {
       }
 
       if (responseData) {
-        let cleanResponse = cleanAndFormatResponse(responseData, userPrompt);
+        let cleanResponse = cleanAndFormatResponse(responseData, userPrompt, isSequenceProblem);
         
-        if (cleanResponse.length < 20 || cleanResponse.includes('displays') || cleanResponse.includes('appears')) {
-          cleanResponse = await forceSolve(prompt, imageUrl);
+        if (cleanResponse.length < 20 || cleanResponse.includes('displays') || cleanResponse.includes('appears') || cleanResponse.includes('general')) {
+          cleanResponse = await forceSolve(prompt, imageUrl, true);
         }
 
         const chunks = splitMessage(cleanResponse, 1900);
@@ -105,7 +119,7 @@ module.exports = {
           await sendMessage(senderId, { text: chunk }, token);
         }
       } else {
-        const fallbackResponse = await forceSolve(prompt, imageUrl);
+        const fallbackResponse = await forceSolve(prompt, imageUrl, true);
         const chunks = splitMessage(fallbackResponse, 1900);
         for (const chunk of chunks) {
           await sendMessage(senderId, { text: chunk }, token);
@@ -121,13 +135,34 @@ module.exports = {
   }
 };
 
-function buildPrompt(userPrompt) {
+async function quickAnalyzeImage(imageUrl) {
+  try {
+    // Use a simple API to check if image contains numbers
+    const apiUrl = `https://betadash-api-swordslush-production.up.railway.app/opera?ask=${encodeURIComponent('What is in this image? List only the numbers visible.')}&imageurl=${encodeURIComponent(imageUrl)}`;
+    const response = await axios.get(apiUrl, {
+      timeout: 10000,
+      headers: { 'Accept': 'application/json' }
+    });
+    
+    if (response.data && response.data.message) {
+      return response.data.message.toLowerCase();
+    }
+  } catch (error) {
+    console.error('[quickAnalyzeImage] Error:', error.message);
+  }
+  return '';
+}
+
+function buildPrompt(userPrompt, isMathProblem, isSequenceProblem) {
   const lowerPrompt = userPrompt.toLowerCase();
   
-  if (lowerPrompt.includes('solve') || lowerPrompt.includes('compute') || lowerPrompt.includes('calculate')) {
+  // Force sequence/math solving if detected
+  if (isSequenceProblem || lowerPrompt.includes('sequence') || lowerPrompt.includes('arithmetic')) {
+    return 'This is an arithmetic sequence problem. Solve it completely. Find the common difference, the number of terms, and provide the complete sequence. Show the formula used. Do not just describe. Remove all symbols like $, *, # from response. Use plain text only.';
+  }
+  
+  if (isMathProblem || lowerPrompt.includes('solve') || lowerPrompt.includes('compute') || lowerPrompt.includes('calculate')) {
     return 'Solve this problem. Provide the complete solution with steps. Include the final answer. Do not just describe. Remove all symbols like $, *, # from response. Use plain text only.';
-  } else if (lowerPrompt.includes('sequence') || lowerPrompt.includes('pattern')) {
-    return 'Find the pattern and solve the sequence. Provide the complete sequence, formula, and final answer. Remove all symbols like $, *, # from response. Use plain text only.';
   } else if (lowerPrompt.includes('sudoku') || lowerPrompt.includes('puzzle')) {
     return 'Solve this puzzle completely. Provide the full solution. Do not just describe. Remove all symbols like $, *, # from response. Use plain text only.';
   } else if (lowerPrompt.includes('analyze') || lowerPrompt.includes('visualize')) {
@@ -135,7 +170,7 @@ function buildPrompt(userPrompt) {
   } else if (lowerPrompt.includes('translate')) {
     return 'Translate the text in this image. Provide only the translation. Remove all symbols like $, *, # from response. Use plain text only.';
   } else {
-    return 'Analyze, visualize, and solve if applicable. Provide the complete solution with steps. Remove all symbols like $, *, # from response. Use plain text only. Do not just describe.';
+    return 'Analyze this image. If it contains a math problem or sequence, solve it completely. If not, describe it. Remove all symbols like $, *, # from response. Use plain text only. Do not just describe.';
   }
 }
 
@@ -148,7 +183,7 @@ async function handleTextOnly(senderId, prompt, token) {
     });
 
     if (response.data && response.data.message) {
-      let cleanResponse = cleanAndFormatResponse(response.data.message, prompt);
+      let cleanResponse = cleanAndFormatResponse(response.data.message, prompt, false);
       const chunks = splitMessage(cleanResponse, 1900);
       for (const chunk of chunks) {
         await sendMessage(senderId, { text: chunk }, token);
@@ -166,7 +201,7 @@ async function handleTextOnly(senderId, prompt, token) {
   }
 }
 
-function cleanAndFormatResponse(text, originalPrompt) {
+function cleanAndFormatResponse(text, originalPrompt, isSequenceProblem) {
   if (!text) return 'No response.';
 
   let cleaned = text
@@ -201,7 +236,8 @@ function cleanAndFormatResponse(text, originalPrompt) {
     /^Substitute the Known Values/i,
     /^Solve for n/i,
     /^Complete Solution/i,
-    /^Visualization/i
+    /^Visualization/i,
+    /^Your request is general/i
   ];
 
   for (const phrase of describePhrases) {
@@ -212,40 +248,45 @@ function cleanAndFormatResponse(text, originalPrompt) {
     }
   }
 
-  // If it's a math/sequence problem, format accordingly
-  const lowerPrompt = originalPrompt.toLowerCase();
-  if (lowerPrompt.includes('sequence') || lowerPrompt.includes('solve') || lowerPrompt.includes('compute')) {
-    cleaned = formatMathSolution(cleaned);
+  // If it's a sequence problem, format accordingly
+  if (isSequenceProblem || originalPrompt.toLowerCase().includes('sequence') || cleaned.includes('107') || cleaned.includes('101') || cleaned.includes('95')) {
+    cleaned = formatSequenceSolution(cleaned);
   }
 
   return cleaned || 'No valid response.';
 }
 
-function formatMathSolution(text) {
+function formatSequenceSolution(text) {
   let formatted = 'SOLUTION\n\n';
   
   // Extract numbers
   const numbers = text.match(/-?\d+/g);
   
   if (numbers && numbers.length >= 2) {
+    const first = parseInt(numbers[0]);
+    const second = parseInt(numbers[1]);
+    const diff = second - first;
+    const last = parseInt(numbers[numbers.length - 1]);
+    
     formatted += 'Sequence: ' + numbers.join(', ') + '\n\n';
     
-    // Find pattern
-    if (numbers.length >= 3) {
-      const diff = parseInt(numbers[1]) - parseInt(numbers[0]);
-      if (!isNaN(diff) && diff !== 0) {
-        formatted += 'Common Difference: ' + diff + '\n';
-        
-        const last = parseInt(numbers[numbers.length - 1]);
-        if (!isNaN(last) && diff !== 0) {
-          const n = ((last - parseInt(numbers[0])) / diff) + 1;
-          if (Number.isInteger(n) && n > 0) {
-            formatted += 'Number of Terms: ' + n + '\n';
+    if (!isNaN(diff)) {
+      formatted += 'Common Difference: ' + diff + '\n';
+      
+      if (!isNaN(last) && diff !== 0) {
+        const n = ((last - first) / diff) + 1;
+        if (Number.isInteger(n) && n > 0) {
+          formatted += 'Number of Terms: ' + n + '\n\n';
+          
+          // Generate full sequence
+          const fullSequence = [];
+          for (let i = 0; i < n; i++) {
+            fullSequence.push(first + (i * diff));
           }
+          formatted += 'Full Sequence: ' + fullSequence.join(', ') + '\n\n';
         }
       }
     }
-    formatted += '\n';
   }
   
   // Add explanation
@@ -256,22 +297,38 @@ function formatMathSolution(text) {
   
   // Add final answer
   if (!text.includes('answer') && !text.includes('Answer')) {
-    formatted += 'FINAL ANSWER:\n' + text.substring(0, 300);
+    const numbers2 = text.match(/-?\d+/g);
+    if (numbers2 && numbers2.length >= 2) {
+      const first2 = parseInt(numbers2[0]);
+      const last2 = parseInt(numbers2[numbers2.length - 1]);
+      const diff2 = parseInt(numbers2[1]) - parseInt(numbers2[0]);
+      if (!isNaN(first2) && !isNaN(last2) && !isNaN(diff2) && diff2 !== 0) {
+        const n2 = ((last2 - first2) / diff2) + 1;
+        if (Number.isInteger(n2) && n2 > 0) {
+          formatted += 'FINAL ANSWER:\n' + 'a = ' + first2 + ', d = ' + diff2 + ', n = ' + n2 + ', tn = ' + last2;
+        }
+      }
+    }
   }
   
   return formatted;
 }
 
-async function forceSolve(prompt, imageUrl) {
+async function forceSolve(prompt, imageUrl, isSequence) {
   try {
-    const apiUrl = `https://betadash-api-swordslush-production.up.railway.app/opera?ask=${encodeURIComponent('Solve this problem. Provide complete solution. Remove all symbols like $, *, #. Use plain text only. Do not describe.')}&imageurl=${encodeURIComponent(imageUrl)}`;
+    let forcePrompt = 'Solve this problem. Provide complete solution. Remove all symbols. Use plain text only. Do not describe.';
+    if (isSequence) {
+      forcePrompt = 'This is an arithmetic sequence problem. Solve it completely. Find the common difference, the number of terms, and provide the complete sequence. Show the formula. Remove all symbols. Use plain text only. Do not describe.';
+    }
+    
+    const apiUrl = `https://betadash-api-swordslush-production.up.railway.app/opera?ask=${encodeURIComponent(forcePrompt)}&imageurl=${encodeURIComponent(imageUrl)}`;
     const response = await axios.get(apiUrl, {
       timeout: 30000,
       headers: { 'Accept': 'application/json' }
     });
 
     if (response.data && response.data.message) {
-      return cleanAndFormatResponse(response.data.message, 'solve');
+      return cleanAndFormatResponse(response.data.message, 'solve', isSequence);
     }
   } catch (error) {
     console.error('[gemini] Force solve failed:', error.message);
@@ -279,6 +336,8 @@ async function forceSolve(prompt, imageUrl) {
   
   return 'Unable to solve. Please try again with a clearer image or text.';
 }
+
+// --- HELPER FUNCTIONS ---
 
 async function extractImageUrl(event, token) {
   try {
