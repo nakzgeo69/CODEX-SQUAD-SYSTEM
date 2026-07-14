@@ -19,14 +19,11 @@ module.exports = {
 
   async execute(senderId, args, token, event) {
     try {
-      // Extract image URL from event
       let imageUrl = await extractImageUrl(event, token);
       const userPrompt = args.join(' ') || '';
 
-      // Build prompt for solving
       let prompt = buildPrompt(userPrompt);
 
-      // If no image and no text, show usage
       if (!imageUrl && !userPrompt) {
         await sendMessage(senderId, {
           text: 'Usage: gemini [question/problem]\n\nExamples:\n  gemini What is 25 x 4?\n  gemini Solve: 2x + 5 = 15\n  [send image] gemini\n  [send image] gemini Solve this puzzle'
@@ -34,7 +31,6 @@ module.exports = {
         return;
       }
 
-      // If text only (no image), use text-based API
       if (!imageUrl && userPrompt) {
         await handleTextOnly(senderId, userPrompt, token);
         return;
@@ -43,7 +39,6 @@ module.exports = {
       console.log('[gemini] Processing image:', imageUrl);
       console.log('[gemini] Prompt:', prompt);
 
-      // Try each API until one works
       let responseData = null;
       let lastError = null;
 
@@ -54,7 +49,6 @@ module.exports = {
           let response;
           
           if (apiUrl.includes('apiv-c7yb')) {
-            // Vision API format
             const uid = senderId || 'user123';
             const apiUrlWithParams = `${apiUrl}?prompt=${encodeURIComponent(prompt)}&uid=${uid}&imgUrl=${encodeURIComponent(imageUrl)}`;
             response = await axios.get(apiUrlWithParams, {
@@ -68,7 +62,6 @@ module.exports = {
               break;
             }
           } else if (apiUrl.includes('opera')) {
-            // Opera API format
             const apiUrlWithParams = `${apiUrl}?ask=${encodeURIComponent(prompt)}&imageurl=${encodeURIComponent(imageUrl)}`;
             response = await axios.get(apiUrlWithParams, {
               timeout: 30000,
@@ -81,7 +74,6 @@ module.exports = {
               break;
             }
           } else {
-            // Generic API format
             const apiUrlWithParams = `${apiUrl}?prompt=${encodeURIComponent(prompt)}&imageurl=${encodeURIComponent(imageUrl)}`;
             response = await axios.get(apiUrlWithParams, {
               timeout: 30000,
@@ -102,10 +94,8 @@ module.exports = {
       }
 
       if (responseData) {
-        // Process and format the response
         let cleanResponse = cleanAndFormatResponse(responseData, userPrompt);
         
-        // If response is too short or just describes, force solve
         if (cleanResponse.length < 20 || cleanResponse.includes('displays') || cleanResponse.includes('appears')) {
           cleanResponse = await forceSolve(prompt, imageUrl);
         }
@@ -115,7 +105,6 @@ module.exports = {
           await sendMessage(senderId, { text: chunk }, token);
         }
       } else {
-        // Final fallback
         const fallbackResponse = await forceSolve(prompt, imageUrl);
         const chunks = splitMessage(fallbackResponse, 1900);
         for (const chunk of chunks) {
@@ -136,24 +125,23 @@ function buildPrompt(userPrompt) {
   const lowerPrompt = userPrompt.toLowerCase();
   
   if (lowerPrompt.includes('solve') || lowerPrompt.includes('compute') || lowerPrompt.includes('calculate')) {
-    return 'Solve this problem. Provide the complete solution with steps. Include the final answer. Do not just describe.';
+    return 'Solve this problem. Provide the complete solution with steps. Include the final answer. Do not just describe. Remove all symbols like $, *, # from response. Use plain text only.';
   } else if (lowerPrompt.includes('sequence') || lowerPrompt.includes('pattern')) {
-    return 'Find the pattern and solve the sequence. Provide the complete sequence, formula, and final answer.';
+    return 'Find the pattern and solve the sequence. Provide the complete sequence, formula, and final answer. Remove all symbols like $, *, # from response. Use plain text only.';
   } else if (lowerPrompt.includes('sudoku') || lowerPrompt.includes('puzzle')) {
-    return 'Solve this puzzle completely. Provide the full solution. Do not just describe.';
+    return 'Solve this puzzle completely. Provide the full solution. Do not just describe. Remove all symbols like $, *, # from response. Use plain text only.';
   } else if (lowerPrompt.includes('analyze') || lowerPrompt.includes('visualize')) {
-    return 'Analyze and visualize this image. Provide insights and description.';
+    return 'Analyze and visualize this image. Provide insights and description. Remove all symbols like $, *, # from response. Use plain text only.';
   } else if (lowerPrompt.includes('translate')) {
-    return 'Translate the text in this image. Provide only the translation.';
+    return 'Translate the text in this image. Provide only the translation. Remove all symbols like $, *, # from response. Use plain text only.';
   } else {
-    return 'Analyze, visualize, and solve if applicable. Provide the complete solution with steps. Do not just describe.';
+    return 'Analyze, visualize, and solve if applicable. Provide the complete solution with steps. Remove all symbols like $, *, # from response. Use plain text only. Do not just describe.';
   }
 }
 
 async function handleTextOnly(senderId, prompt, token) {
   try {
-    // Try Opera API for text
-    const apiUrl = `https://betadash-api-swordslush-production.up.railway.app/opera?ask=${encodeURIComponent(prompt)}`;
+    const apiUrl = `https://betadash-api-swordslush-production.up.railway.app/opera?ask=${encodeURIComponent(prompt + ' Remove all symbols like $, *, # from response. Use plain text only.')}`;
     const response = await axios.get(apiUrl, {
       timeout: 30000,
       headers: { 'Accept': 'application/json' }
@@ -192,6 +180,12 @@ function cleanAndFormatResponse(text, originalPrompt) {
     .replace(/\n{3,}/g, '\n\n')
     .trim();
 
+  // Remove $ signs
+  cleaned = cleaned.replace(/\$/g, '');
+
+  // Remove unusual characters
+  cleaned = cleaned.replace(/[^a-zA-Z0-9\s\.,\-\!\?\:\;\'\"\(\)\%\=\+\/\*]/g, '');
+
   // Remove common "describe" phrases
   const describePhrases = [
     /^The image displays/i,
@@ -202,7 +196,12 @@ function cleanAndFormatResponse(text, originalPrompt) {
     /^It appears to be/i,
     /^This appears to be/i,
     /^Looking at this image/i,
-    /^Upon examination/i
+    /^Upon examination/i,
+    /^Analyze the Given Information/i,
+    /^Substitute the Known Values/i,
+    /^Solve for n/i,
+    /^Complete Solution/i,
+    /^Visualization/i
   ];
 
   for (const phrase of describePhrases) {
@@ -264,9 +263,8 @@ function formatMathSolution(text) {
 }
 
 async function forceSolve(prompt, imageUrl) {
-  // Force solve using Opera API as final fallback
   try {
-    const apiUrl = `https://betadash-api-swordslush-production.up.railway.app/opera?ask=${encodeURIComponent('Solve this problem. Provide complete solution. Do not describe.')}&imageurl=${encodeURIComponent(imageUrl)}`;
+    const apiUrl = `https://betadash-api-swordslush-production.up.railway.app/opera?ask=${encodeURIComponent('Solve this problem. Provide complete solution. Remove all symbols like $, *, #. Use plain text only. Do not describe.')}&imageurl=${encodeURIComponent(imageUrl)}`;
     const response = await axios.get(apiUrl, {
       timeout: 30000,
       headers: { 'Accept': 'application/json' }
@@ -281,8 +279,6 @@ async function forceSolve(prompt, imageUrl) {
   
   return 'Unable to solve. Please try again with a clearer image or text.';
 }
-
-// --- HELPER FUNCTIONS ---
 
 async function extractImageUrl(event, token) {
   try {
