@@ -35,11 +35,13 @@ module.exports = {
 
       console.log('[gemini] Processing image:', imageUrl);
 
+      // Dynamic prompt - no hardcoded answers
       let prompt = buildPrompt(userPrompt);
       console.log('[gemini] Prompt:', prompt);
 
       let responseData = null;
 
+      // Try each API
       for (const apiUrl of API_LIST) {
         try {
           console.log('[gemini] Trying API:', apiUrl);
@@ -90,23 +92,23 @@ module.exports = {
         }
       }
 
-      if (responseData) {
-        let cleanResponse = cleanAndFormatResponse(responseData, userPrompt);
-        
-        if (cleanResponse.length < 20 || cleanResponse.includes('displays') || cleanResponse.includes('appears') || cleanResponse.includes('Please upload')) {
-          cleanResponse = await forceSolve(prompt, imageUrl);
-        }
+      // If no response from APIs, force solve using Opera
+      if (!responseData || responseData.includes('please upload') || responseData.includes('Please upload')) {
+        responseData = await forceSolve(prompt, imageUrl);
+      }
 
-        const chunks = splitMessage(cleanResponse, 1900);
-        for (const chunk of chunks) {
-          await sendMessage(senderId, { text: chunk }, token);
-        }
-      } else {
-        const fallbackResponse = await forceSolve(prompt, imageUrl);
-        const chunks = splitMessage(fallbackResponse, 1900);
-        for (const chunk of chunks) {
-          await sendMessage(senderId, { text: chunk }, token);
-        }
+      // Clean and format response
+      let cleanResponse = cleanAndFormatResponse(responseData, userPrompt);
+
+      // If still has error phrases, force solve again
+      if (cleanResponse.includes('please upload') || cleanResponse.includes('Please upload') || cleanResponse.includes('Unable to')) {
+        cleanResponse = await forceSolve(prompt, imageUrl);
+        cleanResponse = cleanAndFormatResponse(cleanResponse, userPrompt);
+      }
+
+      const chunks = splitMessage(cleanResponse, 1900);
+      for (const chunk of chunks) {
+        await sendMessage(senderId, { text: chunk }, token);
       }
 
     } catch (error) {
@@ -121,23 +123,25 @@ module.exports = {
 function buildPrompt(userPrompt) {
   const lowerPrompt = userPrompt.toLowerCase();
 
-  // Math/Solve mode - direct solution
-  if (lowerPrompt.includes('solve') || lowerPrompt.includes('compute') || lowerPrompt.includes('calculate') || lowerPrompt.includes('sequence') || lowerPrompt.includes('pattern')) {
-    return 'Solve this problem. Provide only the solution and final answer. Be direct and concise. No long explanations. Use plain text. No symbols.';
+  // Detect what the user wants
+  if (lowerPrompt.includes('solve') || lowerPrompt.includes('compute') || lowerPrompt.includes('calculate')) {
+    return 'Analyze the image and solve the problem. Provide the solution and final answer. Use plain text. No symbols. Be direct.';
   }
 
-  // Criticize mode - direct analysis
-  if (lowerPrompt.includes('criticize') || lowerPrompt.includes('critique') || lowerPrompt.includes('think')) {
-    return 'Analyze this image directly. Provide a concise, direct explanation. No unnecessary text. Use plain text. No symbols.';
+  if (lowerPrompt.includes('sequence') || lowerPrompt.includes('pattern')) {
+    return 'Analyze the image. If it contains a sequence or pattern, solve it completely. Provide the full sequence, formula, and final answer. Use plain text. No symbols.';
   }
 
-  // Translate mode
+  if (lowerPrompt.includes('criticize') || lowerPrompt.includes('critique') || lowerPrompt.includes('analyze deeply')) {
+    return 'Analyze this image deeply. Provide a critical analysis and interpretation. Be insightful and thorough. Use plain text. No symbols.';
+  }
+
   if (lowerPrompt.includes('translate')) {
-    return 'Translate the text. Provide only the translation. Direct and concise. Use plain text. No symbols.';
+    return 'Translate the text in this image. Provide only the translation. Use plain text. No symbols.';
   }
 
-  // Default: Direct, concise analysis
-  return 'Analyze this image. Provide a direct, concise explanation. No unnecessary text. Use plain text. No symbols.';
+  // Default: Analyze whatever is in the image
+  return 'Analyze this image. Identify what it shows and provide a direct, accurate answer. If it contains a problem, solve it. Use plain text. No symbols.';
 }
 
 function cleanAndFormatResponse(text, originalPrompt) {
@@ -156,36 +160,24 @@ function cleanAndFormatResponse(text, originalPrompt) {
     .replace(/[^a-zA-Z0-9\s\.,\-\!\?\:\;\'\"\(\)\%\=\+\/\*\n]/g, '')
     .trim();
 
-  // Remove unnecessary phrases
+  // Remove error phrases
   const removePhrases = [
-    /^The image displays/i,
-    /^Here's a breakdown/i,
-    /^The overall image/i,
-    /^This image shows/i,
-    /^The image shows/i,
-    /^It appears to be/i,
-    /^This appears to be/i,
-    /^Looking at this image/i,
-    /^Upon examination/i,
-    /^Please provide/i,
-    /^Your request is general/i,
-    /^Could you please/i,
-    /^Please upload/i,
-    /^Here is the complete solution/i,
-    /^Explanation:/i
+    /Please upload the image you want me to analyze/gi,
+    /Please provide/gi,
+    /Could you please/gi,
+    /Your request is general/gi,
+    /Unable to analyze/gi
   ];
 
   for (const phrase of removePhrases) {
-    if (cleaned.match(phrase)) {
-      cleaned = cleaned.replace(phrase, '');
-      cleaned = cleaned.trim();
-      break;
-    }
+    cleaned = cleaned.replace(phrase, '');
   }
 
-  // If math, format as direct solution
-  const lowerPrompt = originalPrompt.toLowerCase();
-  if (lowerPrompt.includes('solve') || lowerPrompt.includes('compute') || lowerPrompt.includes('calculate') || lowerPrompt.includes('sequence')) {
+  cleaned = cleaned.trim();
+
+  // If it contains numbers, try to format as math solution
+  const numbers = cleaned.match(/-?\d+/g);
+  if (numbers && numbers.length >= 3) {
     cleaned = formatMathSolution(cleaned);
   }
 
@@ -213,54 +205,35 @@ function formatMathSolution(text) {
         formatted += 'Sequence: ' + fullSequence.join(', ') + '\n\n';
         formatted += 'Common Difference: ' + diff + '\n';
         formatted += 'Number of Terms: ' + n + '\n\n';
-      }
-    }
-  }
-  
-  // Short explanation only
-  const explanation = text.replace(/[\d,\s-]+/g, '').trim();
-  if (explanation && explanation.length > 5) {
-    const shortExplanation = explanation.split('\n').filter((v, i, a) => a.indexOf(v) === i).join('\n');
-    formatted += 'EXPLANATION:\n' + shortExplanation.substring(0, 200) + '\n\n';
-  }
-  
-  // Final answer only
-  const numbers2 = text.match(/-?\d+/g);
-  if (numbers2 && numbers2.length >= 2) {
-    const first2 = parseInt(numbers2[0]);
-    const last2 = parseInt(numbers2[numbers2.length - 1]);
-    const diff2 = parseInt(numbers2[1]) - parseInt(numbers2[0]);
-    if (!isNaN(first2) && !isNaN(last2) && !isNaN(diff2) && diff2 !== 0) {
-      const n2 = ((last2 - first2) / diff2) + 1;
-      if (Number.isInteger(n2) && n2 > 0) {
         formatted += 'FINAL ANSWER:\n';
-        formatted += 'First term: ' + first2 + '\n';
-        formatted += 'Common difference: ' + diff2 + '\n';
-        formatted += 'Number of terms: ' + n2 + '\n';
-        formatted += 'Last term: ' + last2;
+        formatted += 'First term: ' + first + '\n';
+        formatted += 'Common difference: ' + diff + '\n';
+        formatted += 'Number of terms: ' + n + '\n';
+        formatted += 'Last term: ' + last;
+        return formatted;
       }
     }
   }
   
-  return formatted || text;
+  return text;
 }
 
 async function forceSolve(prompt, imageUrl) {
   try {
-    const apiUrl = `https://betadash-api-swordslush-production.up.railway.app/opera?ask=${encodeURIComponent(prompt)}&imageurl=${encodeURIComponent(imageUrl)}`;
+    const apiUrl = `https://betadash-api-swordslush-production.up.railway.app/opera?ask=${encodeURIComponent('Analyze this image. Provide a direct, accurate answer. Use plain text. No symbols. No unnecessary text.')}&imageurl=${encodeURIComponent(imageUrl)}`;
     const response = await axios.get(apiUrl, {
       timeout: 30000,
       headers: { 'Accept': 'application/json' }
     });
 
     if (response.data && response.data.message) {
-      return cleanAndFormatResponse(response.data.message, prompt);
+      return response.data.message;
     }
   } catch (error) {
     console.error('[gemini] Force solve failed:', error.message);
   }
   
-  return 'Unable to analyze or solve. Please try again.';
+  return 'Unable to analyze. Please try again.';
 }
 
 async function handleTextOnly(senderId, prompt, token) {
