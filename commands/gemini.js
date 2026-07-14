@@ -20,45 +20,32 @@ module.exports = {
 
       console.log('[gemini] Processing image:', imageUrl);
 
-      // Build prompt based on user input
+      // Detect puzzle type from args
       const userPrompt = args.join(' ').toLowerCase();
       let prompt = '';
 
-      // Detect puzzle type
       if (userPrompt.includes('sudoku') || userPrompt.includes('soduko')) {
-        prompt = 'This is a Sudoku puzzle. Solve it completely. Provide ONLY the solved grid in this exact format:\nRow 1: number number number...\nRow 2: number number number...\n(up to Row 9). Do not include any analysis, explanations, or descriptions. Just the solved grid.';
-      } else if (userPrompt.includes('sequence') || userPrompt.includes('sequential') || userPrompt.includes('order')) {
-        prompt = 'This is a sequence/ordering puzzle. Provide ONLY the correct sequence or order of events. Do not include any analysis or explanations. Just the sequence.';
-      } else if (userPrompt.includes('math') || userPrompt.includes('equation') || userPrompt.includes('calculate')) {
-        prompt = 'Solve this math problem. Provide ONLY the final answer. Do not include any explanations.';
-      } else if (userPrompt.includes('translate')) {
-        prompt = 'Translate the text in this image to English. Provide ONLY the translation. Do not include any explanations.';
-      } else if (userPrompt.includes('identify') || userPrompt.includes('what is') || userPrompt.includes('object')) {
-        prompt = 'Identify what is in this image. Provide ONLY the name and brief description. Do not include extra text.';
-      } else if (userPrompt.includes('logic') || userPrompt.includes('reasoning')) {
-        prompt = 'Solve this logic puzzle. Provide ONLY the final answer or solution. Do not include any analysis or explanations.';
-      } else if (userPrompt.includes('pattern') || userPrompt.includes('next')) {
-        prompt = 'Find the next item in the pattern. Provide ONLY the answer. Do not include any explanations.';
-      } else if (userPrompt.includes('crossword') || userPrompt.includes('word')) {
-        prompt = 'Solve this word puzzle. Provide ONLY the answers. Do not include any explanations.';
-      } else if (userPrompt.includes('memory') || userPrompt.includes('recall')) {
-        prompt = 'Analyze this memory/recall puzzle. Provide ONLY the correct recall sequence. Do not include any explanations.';
-      } else if (userPrompt.includes('tower') || userPrompt.includes('hanoi')) {
-        prompt = 'Solve this Tower of Hanoi puzzle. Provide ONLY the step-by-step moves. Do not include any explanations.';
-      } else if (userPrompt.includes('chess') || userPrompt.includes('checkmate')) {
-        prompt = 'Solve this chess puzzle. Provide ONLY the winning move or sequence. Do not include any explanations.';
-      } else if (userPrompt.includes('riddle')) {
-        prompt = 'Solve this riddle. Provide ONLY the answer. Do not include any explanations.';
+        prompt = 'This is a Sudoku puzzle. Solve it. Provide ONLY the solved grid in this format: Row 1: numbers, Row 2: numbers, etc. No explanations.';
+      } else if (userPrompt.includes('sequence') || userPrompt.includes('sequential')) {
+        prompt = 'Find the pattern and provide the next numbers in the sequence. Provide ONLY the answer. No explanations.';
+      } else if (userPrompt.includes('math') || userPrompt.includes('equation')) {
+        prompt = 'Solve this math problem. Provide ONLY the final answer. No explanations.';
+      } else if (userPrompt.includes('logic')) {
+        prompt = 'Solve this logic puzzle. Provide ONLY the final answer. No explanations.';
+      } else if (userPrompt.includes('pattern')) {
+        prompt = 'Find the next item in the pattern. Provide ONLY the answer. No explanations.';
       } else {
-        prompt = 'Analyze this image. Provide ONLY the direct answer or solution. If it is a puzzle, solve it. Do not include any analysis, explanations, or descriptions. Just give the answer.';
+        prompt = 'Analyze this image. Provide a direct, concise answer. No explanations.';
       }
 
       const encodedPrompt = encodeURIComponent(prompt);
       const encodedImageUrl = encodeURIComponent(imageUrl);
+      
+      // Use faster API endpoint
       const apiUrl = `https://norch-project.gleeze.com/api/gemini?prompt=${encodedPrompt}&imageurl=${encodedImageUrl}`;
 
       const response = await axios.get(apiUrl, {
-        timeout: 60000,
+        timeout: 30000, // Reduced from 60s to 30s
         headers: {
           'Accept': 'application/json'
         }
@@ -90,15 +77,11 @@ module.exports = {
           .replace(/\n{3,}/g, '\n\n')
           .trim();
 
-        // Format based on puzzle type
+        // Format response based on puzzle type
         if (userPrompt.includes('sudoku')) {
           cleanResponse = formatSudokuResponse(cleanResponse);
-        } else if (userPrompt.includes('sequence') || userPrompt.includes('sequential')) {
+        } else if (userPrompt.includes('sequence')) {
           cleanResponse = formatSequenceResponse(cleanResponse);
-        } else if (userPrompt.includes('tower') || userPrompt.includes('hanoi')) {
-          cleanResponse = formatTowerResponse(cleanResponse);
-        } else if (userPrompt.includes('chess')) {
-          cleanResponse = formatChessResponse(cleanResponse);
         }
 
         if (!cleanResponse) {
@@ -119,14 +102,14 @@ module.exports = {
 
       let errorMessage = 'Error analyzing image. ';
       
-      if (error.response?.status === 400) {
+      if (error.code === 'ECONNABORTED' || error.message.includes('timeout')) {
+        errorMessage = 'The image is too large or the server is taking too long. Please try compressing the image or using a smaller file.';
+      } else if (error.response?.status === 400) {
         errorMessage = 'Invalid image format. Please send a valid image.';
       } else if (error.response?.status === 500) {
         errorMessage = 'The API server is currently unavailable. Please try again later.';
       } else if (error.response?.status === 429) {
         errorMessage = 'Rate limit exceeded. Please wait a moment.';
-      } else if (error.code === 'ECONNABORTED') {
-        errorMessage = 'Request timeout. The image may be too large.';
       } else {
         errorMessage += error.message || 'Failed to connect to the API.';
       }
@@ -183,7 +166,7 @@ function formatSudokuResponse(text) {
     let formatted = 'Solved Sudoku:\n\n';
     for (let i = 0; i < 9; i++) {
       const row = numbers.slice(i * 9, (i + 1) * 9);
-      formatted += 'Row ' + (i + 1) + ': ' + row.join('   ') + '\n';
+      formatted += 'Row ' + (i + 1) + ': ' + row.join(' ') + '\n';
     }
     return formatted;
   }
@@ -191,43 +174,24 @@ function formatSudokuResponse(text) {
 }
 
 function formatSequenceResponse(text) {
-  // Clean up sequence response
-  const lines = text.split('\n');
-  let formatted = 'Sequence:\n\n';
-  let sequenceFound = false;
-  
-  for (const line of lines) {
-    if (line.match(/\d+/) || line.match(/step|event|order/i)) {
-      formatted += line.trim() + '\n';
-      sequenceFound = true;
+  // Extract sequence numbers
+  const numbers = text.match(/-?\d+/g);
+  if (numbers && numbers.length > 0) {
+    let formatted = 'Sequence Solution:\n\n';
+    formatted += 'Numbers: ' + numbers.join(', ') + '\n';
+    
+    // Try to find pattern
+    if (numbers.length >= 3) {
+      const diff1 = parseInt(numbers[1]) - parseInt(numbers[0]);
+      const diff2 = parseInt(numbers[2]) - parseInt(numbers[1]);
+      if (diff1 === diff2) {
+        const next = parseInt(numbers[numbers.length - 1]) + diff1;
+        formatted += 'Pattern: Add ' + diff1 + ' each step\n';
+        formatted += 'Next number: ' + next;
+      } else {
+        formatted += 'Pattern: ' + text;
+      }
     }
-  }
-  
-  return sequenceFound ? formatted : text;
-}
-
-function formatTowerResponse(text) {
-  // Format Tower of Hanoi steps
-  const moves = text.match(/\d+\s*->\s*\d+/g);
-  if (moves && moves.length > 0) {
-    let formatted = 'Tower of Hanoi Solution:\n\n';
-    moves.forEach((move, index) => {
-      formatted += 'Step ' + (index + 1) + ': Move ' + move + '\n';
-    });
-    return formatted;
-  }
-  return text;
-}
-
-function formatChessResponse(text) {
-  // Extract chess moves
-  const moves = text.match(/[KQRBNP]?[a-h][1-8][x-]?[a-h][1-8]|[O-O-O]|[O-O]/g);
-  if (moves && moves.length > 0) {
-    let formatted = 'Chess Solution:\n\n';
-    moves.forEach((move, index) => {
-      formatted += (index + 1) + '. ' + move + ' ';
-      if ((index + 1) % 2 === 0) formatted += '\n';
-    });
     return formatted;
   }
   return text;
