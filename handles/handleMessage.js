@@ -58,9 +58,8 @@ const handleMessage = async (event, pageAccessToken) => {
     }
   }
 
-  // AUTO-DETECT: If image and no text, run gemini
   if (hasImage && imageUrl && !messageText) {
-    console.log('[handleMessage] Auto-detected image, running gemini...');
+    console.log('[handleMessage] Auto-analyzing image with gemini...');
     const geminiCommand = commands.get('gemini');
     if (geminiCommand) {
       await geminiCommand.execute(senderId, [], pageAccessToken, event);
@@ -68,7 +67,6 @@ const handleMessage = async (event, pageAccessToken) => {
     }
   }
 
-  // AUTO-DETECT: If image with text, check if it's a command
   if (hasImage && imageUrl && messageText) {
     const isCommand = messageText.startsWith(prefix);
     const [commandName] = isCommand 
@@ -84,11 +82,10 @@ const handleMessage = async (event, pageAccessToken) => {
       return;
     }
     
-    // If not a command, run gemini with the text as prompt
-    console.log('[handleMessage] Auto-detected image with caption, running gemini...');
+    console.log('[handleMessage] Auto-analyzing image with caption...');
     const geminiCommand = commands.get('gemini');
     if (geminiCommand) {
-      await geminiCommand.execute(senderId, messageText.split(' '), pageAccessToken, event);
+      await geminiCommand.execute(senderId, [], pageAccessToken, event);
       return;
     }
   }
