@@ -3,7 +3,7 @@ const { sendMessage } = require('../handles/sendMessage');
 
 module.exports = {
   name: ['gemini'],
-  description: 'Analyze images and answer questions using Gemini AI',
+  description: 'Analyze images and provide smart actionable responses',
   usage: 'Send an image and the bot will analyze it',
   version: '3.0.0',
   author: 'codex',
@@ -91,24 +91,59 @@ module.exports = {
   },
 
   buildPrompt(userPrompt) {
-    let prompt = `Analyze this image and provide an accurate response.
+    let prompt = `Analyze this image and provide a comprehensive response.
 
-CONTENT DETECTION:
-- If the image contains mathematical expressions, equations, or number problems: Solve them completely. Show step-by-step solution and provide the final answer.
-- If the image contains puzzles, logic problems, or questions: Provide the correct answer with clear explanation.
-- If the image contains text, documents, or written content: Extract and summarize the information accurately.
-- If the image contains logos, photos, artwork, or scenes: Provide detailed description and analysis of what you see, including context and notable details.
+DETECT THE CONTENT TYPE and respond accordingly:
 
-IMPORTANT RULES:
-- For math: Show complete solution steps using plain text. Use words like plus, minus, times, divided by, equals.
-- For analysis: Provide thorough description with observations and context.
-- Be precise and accurate. Double-check your calculations and reasoning.
-- If the image is unclear or ambiguous, state that clearly.
-- Do not ask questions. Provide the complete response directly.
+CONTENT TYPES:
+- Educational: Provide analysis, learning tips, study strategies, real-world examples
+- Career/Professional: Provide career advice, skills needed, industry insights, growth strategies
+- Math/Science: Solve problems step-by-step, explain concepts, provide practice examples
+- Business/Marketing: Provide business insights, marketing strategies, growth tips
+- Health/Medical: Provide health tips, wellness advice, medical information
+- Technology: Provide tech insights, trends, learning resources
+- Legal: Provide legal information, rights, procedures
+- Arts/Creative: Provide creative tips, techniques, inspiration
+- Travel/Geography: Provide travel tips, location info, cultural insights
+- Food/Cooking: Provide recipes, cooking tips, food facts
+- Sports/Fitness: Provide workout tips, sports strategies, fitness advice
+- Finance/Money: Provide financial advice, savings tips, investment basics
+- Relationships: Provide relationship advice, communication tips
+- DIY/Home: Provide DIY tips, home improvement advice
+- History: Provide historical context, significance, lessons
+- General: Provide analysis, observations, helpful suggestions
 
-FORMAT:
-- For problems: Provide SOLUTION with steps, EXPLANATION of reasoning, FINAL ANSWER.
-- For analysis: Provide ANALYSIS with DETAILS and CONTEXT.`;
+For EVERY response, ALWAYS include:
+1. ANALYSIS - Detailed analysis of what you see
+2. TIPS WITH EXAMPLES - Practical suggestions with specific examples
+3. REAL-WORLD APPLICATIONS WITH EXAMPLES - How to apply in real life
+4. NEXT STEPS WITH EXAMPLES - Actionable steps with clear examples
+
+IMPORTANT:
+- Generate content based on what you SEE in the image
+- Do not repeat previous responses
+- Be specific to the image content
+- Use plain text only. No symbols, no markdown
+- If the image is unclear, state that clearly and provide general guidance
+
+RESPONSE FORMAT:
+[TITLE/HEADER]
+
+ANALYSIS:
+[Detailed analysis of the image]
+
+TIPS WITH EXAMPLES:
+1. [Tip] - Example: [Specific example]
+2. [Tip] - Example: [Specific example]
+3. [Tip] - Example: [Specific example]
+
+REAL-WORLD APPLICATIONS WITH EXAMPLES:
+1. [Application] - Example: [Specific example]
+2. [Application] - Example: [Specific example]
+
+NEXT STEPS WITH EXAMPLES:
+1. [Action] - Example: [Specific example]
+2. [Action] - Example: [Specific example]`;
 
     if (userPrompt) {
       prompt += `\n\nUSER QUESTION: ${userPrompt}`;
@@ -121,8 +156,6 @@ FORMAT:
     let processed = response || '';
 
     processed = this.cleanFormatting(processed);
-    processed = this.validateMathAccuracy(processed);
-    processed = this.enhanceAnalysis(processed);
 
     return processed;
   },
@@ -154,113 +187,6 @@ FORMAT:
       .trim();
 
     return cleaned;
-  },
-
-  validateMathAccuracy(response) {
-    const hasMath = this.detectMath(response);
-    
-    if (hasMath) {
-      let validated = response;
-      
-      const numbers = response.match(/-?\d+\.?\d*/g);
-      if (numbers && numbers.length > 0) {
-        const calculations = this.extractCalculations(response);
-        if (calculations.length > 0) {
-          for (const calc of calculations) {
-            const result = this.solveMath(calc);
-            if (result !== null) {
-              validated = validated.replace(calc, result);
-            }
-          }
-        }
-      }
-      
-      return validated;
-    }
-    
-    return response;
-  },
-
-  detectMath(response) {
-    const mathIndicators = [
-      'plus', 'minus', 'times', 'divided by', 'equals',
-      '=', '+', '-', '*', '/', 'x', '÷',
-      'solve', 'calculate', 'equation', 'formula',
-      'sum', 'product', 'difference', 'quotient',
-      'square', 'cube', 'root', 'power', 'exponent'
-    ];
-    
-    const lowerResponse = response.toLowerCase();
-    for (const indicator of mathIndicators) {
-      if (lowerResponse.includes(indicator)) {
-        return true;
-      }
-    }
-    
-    const numbers = response.match(/\d+/g);
-    return numbers && numbers.length > 0;
-  },
-
-  extractCalculations(response) {
-    const operations = response.match(/\d+\s*[+\-*/x÷]\s*\d+/g);
-    return operations || [];
-  },
-
-  solveMath(expression) {
-    try {
-      let sanitized = expression.replace(/[^0-9+\-*/.]/g, '');
-      
-      if (!sanitized.match(/^[\d+\-*/.]*$/)) {
-        return null;
-      }
-      
-      const result = Function('"use strict"; return (' + sanitized + ')')();
-      
-      if (typeof result === 'number' && !isNaN(result)) {
-        return expression + ' = ' + result;
-      }
-      
-      return null;
-    } catch (error) {
-      return null;
-    }
-  },
-
-  enhanceAnalysis(response) {
-    const hasAnalysis = this.detectAnalysis(response);
-    
-    if (hasAnalysis) {
-      let enhanced = response;
-      
-      if (!response.includes('ANALYSIS:') && !response.includes('DESCRIPTION:')) {
-        enhanced = 'ANALYSIS:\n\n' + enhanced;
-      }
-      
-      if (response.length < 100) {
-        enhanced = enhanced + '\n\nIf you need more specific information about this image, please ask a follow-up question.';
-      }
-      
-      return enhanced;
-    }
-    
-    return response;
-  },
-
-  detectAnalysis(response) {
-    const analysisIndicators = [
-      'image shows', 'logo', 'photo', 'picture', 'artwork',
-      'document', 'scene', 'location', 'person', 'object',
-      'color', 'design', 'brand', 'establishment'
-    ];
-    
-    const lowerResponse = response.toLowerCase();
-    for (const indicator of analysisIndicators) {
-      if (lowerResponse.includes(indicator)) {
-        return true;
-      }
-    }
-    
-    return false;
   },
 
   getErrorMessage(error) {
