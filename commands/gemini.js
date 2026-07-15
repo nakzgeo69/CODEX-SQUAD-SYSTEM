@@ -1,17 +1,11 @@
 const axios = require('axios');
 const { sendMessage } = require('../handles/sendMessage');
 
-const API_LIST = [
-  'https://apiv-c7yb.onrender.com/api/gemini-vision',
-  'https://betadash-api-swordslush-production.up.railway.app/opera',
-  'https://norch-project.gleeze.com/api/gemini'
-];
-
 module.exports = {
-  name: ['gemini', 'vision', 'analyze', 'solve', 'compute', 'visualize', 'criticize', 'think'],
-  description: 'Analyze, solve, or criticize images using AI',
-  usage: 'Send an image and type "gemini"',
-  version: '3.0.0',
+  name: ['gemini'],
+  description: 'Auto-analyze images and solve puzzles using Gemini AI',
+  usage: 'Send an image and the bot will auto-analyze it',
+  version: '2.0.0',
   author: 'codex',
   category: 'AI',
   cooldown: 5,
@@ -19,255 +13,122 @@ module.exports = {
   async execute(senderId, args, token, event) {
     try {
       let imageUrl = await extractImageUrl(event, token);
-      const userPrompt = args.join(' ') || '';
 
-      if (!imageUrl && !userPrompt) {
-        await sendMessage(senderId, {
-          text: 'Usage: gemini [question/problem]\n\nExamples:\n  gemini What is 25 x 4?\n  gemini Solve: 2x + 5 = 15\n  [send image] gemini'
-        }, token);
-        return;
-      }
-
-      if (!imageUrl && userPrompt) {
-        await handleTextOnly(senderId, userPrompt, token);
+      if (!imageUrl) {
         return;
       }
 
       console.log('[gemini] Processing image:', imageUrl);
 
-      // Dynamic prompt - no hardcoded answers
-      let prompt = buildPrompt(userPrompt);
-      console.log('[gemini] Prompt:', prompt);
+      const userPrompt = args.join(' ').toLowerCase();
+      let prompt = '';
 
-      let responseData = null;
+      // FORCE SOLVE - no analyze/describe only
+      if (userPrompt.includes('sudoku') || userPrompt.includes('soduko')) {
+        prompt = 'IMPORTANT: This is a Sudoku puzzle. DO NOT just analyze or describe it. SOLVE it completely. Provide the FULL SOLVED GRID with Row 1 to Row 9. Then briefly explain the key steps. The answer must include the complete solved grid.';
+      } else if (userPrompt.includes('sequence') || userPrompt.includes('arithmetic')) {
+        prompt = 'IMPORTANT: This is an arithmetic sequence. DO NOT just analyze it. SOLVE it completely. Find the common difference, the number of terms, and provide the COMPLETE SEQUENCE. Show the formula and final answer.';
+      } else if (userPrompt.includes('math') || userPrompt.includes('equation')) {
+        prompt = 'IMPORTANT: This is a math problem. DO NOT just analyze it. SOLVE it completely. Show the solution steps and provide the FINAL ANSWER.';
+      } else if (userPrompt.includes('logic')) {
+        prompt = 'IMPORTANT: This is a logic puzzle. DO NOT just analyze it. SOLVE it completely. Explain the reasoning and provide the FINAL ANSWER.';
+      } else if (userPrompt.includes('pattern')) {
+        prompt = 'IMPORTANT: This is a pattern puzzle. DO NOT just analyze it. SOLVE it completely. Find the pattern and provide the NEXT ITEMS.';
+      } else {
+        prompt = 'IMPORTANT: DO NOT just analyze or describe this image. If it is a puzzle, SOLVE it and provide the COMPLETE SOLUTION. If it is a question, ANSWER it directly. Provide the FINAL ANSWER.';
+      }
 
-      // Try each API
-      for (const apiUrl of API_LIST) {
-        try {
-          console.log('[gemini] Trying API:', apiUrl);
-          
-          let response;
-          
-          if (apiUrl.includes('apiv-c7yb')) {
-            const uid = senderId || 'user123';
-            const apiUrlWithParams = `${apiUrl}?prompt=${encodeURIComponent(prompt)}&uid=${uid}&imgUrl=${encodeURIComponent(imageUrl)}`;
-            response = await axios.get(apiUrlWithParams, {
-              timeout: 60000,
-              headers: { 'Accept': 'application/json' }
-            });
-            
-            if (response.data && response.data.status === true) {
-              responseData = response.data.response;
-              console.log('[gemini] Success with Vision API');
-              break;
-            }
-          } else if (apiUrl.includes('opera')) {
-            const apiUrlWithParams = `${apiUrl}?ask=${encodeURIComponent(prompt)}&imageurl=${encodeURIComponent(imageUrl)}`;
-            response = await axios.get(apiUrlWithParams, {
-              timeout: 30000,
-              headers: { 'Accept': 'application/json' }
-            });
-            
-            if (response.data && response.data.message) {
-              responseData = response.data.message;
-              console.log('[gemini] Success with Opera API');
-              break;
-            }
-          } else {
-            const apiUrlWithParams = `${apiUrl}?prompt=${encodeURIComponent(prompt)}&imageurl=${encodeURIComponent(imageUrl)}`;
-            response = await axios.get(apiUrlWithParams, {
-              timeout: 30000,
-              headers: { 'Accept': 'application/json' }
-            });
-            
-            if (response.data && response.data.response) {
-              responseData = response.data.response;
-              console.log('[gemini] Success with Generic API');
-              break;
-            }
-          }
-        } catch (error) {
-          console.error('[gemini] API failed:', apiUrl, error.message);
-          continue;
+      const encodedPrompt = encodeURIComponent(prompt);
+      const encodedImageUrl = encodeURIComponent(imageUrl);
+      const apiUrl = `https://norch-project.gleeze.com/api/gemini?prompt=${encodedPrompt}&imageurl=${encodedImageUrl}`;
+
+      const response = await axios.get(apiUrl, {
+        timeout: 60000,
+        headers: {
+          'Accept': 'application/json'
         }
+      });
+
+      if (response.status === 200 && response.data) {
+        const data = response.data;
+        
+        let cleanResponse = data.response || 'No response from Gemini API.';
+        
+        // Remove unnecessary text but keep solution
+        cleanResponse = cleanResponse
+          .replace(/^I'm a Gemini.*?model.*?\n\n?/i, '')
+          .replace(/^Here is my analysis.*?\n/i, '')
+          .replace(/^Let me analyze.*?\n/i, '')
+          .replace(/^The image appears to be.*?\n/i, '')
+          .replace(/^Based on my analysis.*?\n/i, '')
+          .replace(/^I can see that.*?\n/i, '')
+          .replace(/^This looks like.*?\n/i, '')
+          .replace(/^Upon examination.*?\n/i, '')
+          .replace(/^After analyzing.*?\n/i, '')
+          .replace(/^The image shows.*?\n/i, '')
+          .replace(/^This is a.*?\n/i, '')
+          .replace(/\*\*/g, '')
+          .replace(/\*/g, '')
+          .replace(/#{1,6}\s/g, '')
+          .replace(/`/g, '')
+          .replace(/_/g, '')
+          .replace(/~{2}/g, '')
+          .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+          .replace(/\n{3,}/g, '\n\n')
+          .trim();
+
+        // Force format for specific puzzle types with full solution
+        if (userPrompt.includes('sudoku')) {
+          cleanResponse = forceSudokuSolution(cleanResponse);
+        } else if (userPrompt.includes('sequence')) {
+          cleanResponse = forceSequenceSolution(cleanResponse);
+        } else {
+          // For other types, ensure there's a final answer
+          cleanResponse = ensureFinalAnswer(cleanResponse);
+        }
+
+        if (!cleanResponse || cleanResponse.length < 10) {
+          cleanResponse = 'Unable to solve. Please try again with a clearer image.';
+        }
+
+        const chunks = splitMessage(cleanResponse, 1900);
+        for (const chunk of chunks) {
+          await sendMessage(senderId, { text: chunk }, token);
+        }
+        
+      } else {
+        throw new Error('Invalid response from Gemini API');
       }
-
-      // If no response from APIs, force solve using Opera
-      if (!responseData || responseData.includes('please upload') || responseData.includes('Please upload')) {
-        responseData = await forceSolve(prompt, imageUrl);
-      }
-
-      // Clean and format response
-      let cleanResponse = cleanAndFormatResponse(responseData, userPrompt);
-
-      // If still has error phrases, force solve again
-      if (cleanResponse.includes('please upload') || cleanResponse.includes('Please upload') || cleanResponse.includes('Unable to')) {
-        cleanResponse = await forceSolve(prompt, imageUrl);
-        cleanResponse = cleanAndFormatResponse(cleanResponse, userPrompt);
-      }
-
-      const chunks = splitMessage(cleanResponse, 1900);
-      for (const chunk of chunks) {
-        await sendMessage(senderId, { text: chunk }, token);
-      }
-
+      
     } catch (error) {
       console.error('[gemini] Error:', error.message);
+
+      let errorMessage = 'Error analyzing image. ';
+      
+      if (error.code === 'ECONNABORTED' || error.message.includes('timeout')) {
+        errorMessage = 'The image is too large or the server is taking too long. Please try compressing the image.';
+      } else if (error.response?.status === 400) {
+        errorMessage = 'Invalid image format. Please send a valid image.';
+      } else if (error.response?.status === 500) {
+        errorMessage = 'The API server is currently unavailable. Please try again later.';
+      } else if (error.response?.status === 429) {
+        errorMessage = 'Rate limit exceeded. Please wait a moment.';
+      } else {
+        errorMessage += error.message || 'Failed to connect to the API.';
+      }
+
       await sendMessage(senderId, {
-        text: 'Error processing request. Please try again.'
+        text: errorMessage
       }, token);
     }
   }
 };
 
-function buildPrompt(userPrompt) {
-  const lowerPrompt = userPrompt.toLowerCase();
-
-  // Detect what the user wants
-  if (lowerPrompt.includes('solve') || lowerPrompt.includes('compute') || lowerPrompt.includes('calculate')) {
-    return 'Analyze the image and solve the problem. Provide the solution and final answer. Use plain text. No symbols. Be direct.';
-  }
-
-  if (lowerPrompt.includes('sequence') || lowerPrompt.includes('pattern')) {
-    return 'Analyze the image. If it contains a sequence or pattern, solve it completely. Provide the full sequence, formula, and final answer. Use plain text. No symbols.';
-  }
-
-  if (lowerPrompt.includes('criticize') || lowerPrompt.includes('critique') || lowerPrompt.includes('analyze deeply')) {
-    return 'Analyze this image deeply. Provide a critical analysis and interpretation. Be insightful and thorough. Use plain text. No symbols.';
-  }
-
-  if (lowerPrompt.includes('translate')) {
-    return 'Translate the text in this image. Provide only the translation. Use plain text. No symbols.';
-  }
-
-  // Default: Analyze whatever is in the image
-  return 'Analyze this image. Identify what it shows and provide a direct, accurate answer. If it contains a problem, solve it. Use plain text. No symbols.';
-}
-
-function cleanAndFormatResponse(text, originalPrompt) {
-  if (!text) return 'No response.';
-
-  let cleaned = text
-    .replace(/\*\*/g, '')
-    .replace(/\*/g, '')
-    .replace(/#{1,6}\s/g, '')
-    .replace(/`/g, '')
-    .replace(/_/g, '')
-    .replace(/~{2}/g, '')
-    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
-    .replace(/\n{3,}/g, '\n\n')
-    .replace(/\$/g, '')
-    .replace(/[^a-zA-Z0-9\s\.,\-\!\?\:\;\'\"\(\)\%\=\+\/\*\n]/g, '')
-    .trim();
-
-  // Remove error phrases
-  const removePhrases = [
-    /Please upload the image you want me to analyze/gi,
-    /Please provide/gi,
-    /Could you please/gi,
-    /Your request is general/gi,
-    /Unable to analyze/gi
-  ];
-
-  for (const phrase of removePhrases) {
-    cleaned = cleaned.replace(phrase, '');
-  }
-
-  cleaned = cleaned.trim();
-
-  // If it contains numbers, try to format as math solution
-  const numbers = cleaned.match(/-?\d+/g);
-  if (numbers && numbers.length >= 3) {
-    cleaned = formatMathSolution(cleaned);
-  }
-
-  return cleaned || 'No valid response.';
-}
-
-function formatMathSolution(text) {
-  let formatted = 'SOLUTION\n\n';
-  
-  const numbers = text.match(/-?\d+/g);
-  
-  if (numbers && numbers.length >= 2) {
-    const first = parseInt(numbers[0]);
-    const second = parseInt(numbers[1]);
-    const diff = second - first;
-    const last = parseInt(numbers[numbers.length - 1]);
-    
-    if (!isNaN(diff) && diff !== 0 && !isNaN(last)) {
-      const n = ((last - first) / diff) + 1;
-      if (Number.isInteger(n) && n > 0) {
-        const fullSequence = [];
-        for (let i = 0; i < n; i++) {
-          fullSequence.push(first + (i * diff));
-        }
-        formatted += 'Sequence: ' + fullSequence.join(', ') + '\n\n';
-        formatted += 'Common Difference: ' + diff + '\n';
-        formatted += 'Number of Terms: ' + n + '\n\n';
-        formatted += 'FINAL ANSWER:\n';
-        formatted += 'First term: ' + first + '\n';
-        formatted += 'Common difference: ' + diff + '\n';
-        formatted += 'Number of terms: ' + n + '\n';
-        formatted += 'Last term: ' + last;
-        return formatted;
-      }
-    }
-  }
-  
-  return text;
-}
-
-async function forceSolve(prompt, imageUrl) {
-  try {
-    const apiUrl = `https://betadash-api-swordslush-production.up.railway.app/opera?ask=${encodeURIComponent('Analyze this image. Provide a direct, accurate answer. Use plain text. No symbols. No unnecessary text.')}&imageurl=${encodeURIComponent(imageUrl)}`;
-    const response = await axios.get(apiUrl, {
-      timeout: 30000,
-      headers: { 'Accept': 'application/json' }
-    });
-
-    if (response.data && response.data.message) {
-      return response.data.message;
-    }
-  } catch (error) {
-    console.error('[gemini] Force solve failed:', error.message);
-  }
-  
-  return 'Unable to analyze. Please try again.';
-}
-
-async function handleTextOnly(senderId, prompt, token) {
-  try {
-    const apiUrl = `https://betadash-api-swordslush-production.up.railway.app/opera?ask=${encodeURIComponent(prompt + ' Direct and concise. No unnecessary text. Use plain text. No symbols.')}`;
-    const response = await axios.get(apiUrl, {
-      timeout: 30000,
-      headers: { 'Accept': 'application/json' }
-    });
-
-    if (response.data && response.data.message) {
-      let cleanResponse = cleanAndFormatResponse(response.data.message, prompt);
-      const chunks = splitMessage(cleanResponse, 1900);
-      for (const chunk of chunks) {
-        await sendMessage(senderId, { text: chunk }, token);
-      }
-    } else {
-      await sendMessage(senderId, {
-        text: 'Unable to process text. Please try again.'
-      }, token);
-    }
-  } catch (error) {
-    console.error('[gemini] Text only error:', error.message);
-    await sendMessage(senderId, {
-      text: 'Error processing text. Please try again.'
-    }, token);
-  }
-}
-
 async function extractImageUrl(event, token) {
   try {
     if (event?.message?.reply_to?.mid) {
       return await getRepliedImage(event.message.reply_to.mid, token);
-    }
+    } 
     
     if (event?.message?.attachments && event.message.attachments.length > 0) {
       for (const attachment of event.message.attachments) {
@@ -299,6 +160,81 @@ async function getRepliedImage(mid, token) {
     console.error('[Replied Image] Failed:', err.response?.data || err.message);
     return null;
   }
+}
+
+function forceSudokuSolution(text) {
+  let formatted = 'SOLVED SUDOKU\n\n';
+  
+  // Extract all numbers from text
+  const numbers = text.match(/\d+/g);
+  
+  if (numbers && numbers.length >= 81) {
+    formatted += 'COMPLETE SOLUTION:\n';
+    for (let i = 0; i < 9; i++) {
+      const row = numbers.slice(i * 9, (i + 1) * 9);
+      formatted += 'Row ' + (i + 1) + ': ' + row.join('  ') + '\n';
+    }
+    formatted += '\n';
+    
+    // Extract any explanation
+    const explanation = text.replace(/[\d\s]+/g, '').trim();
+    if (explanation && explanation.length > 10) {
+      formatted += 'EXPLANATION:\n' + explanation.substring(0, 300) + '\n';
+    }
+  } else {
+    // If no grid found, return the cleaned text
+    formatted += text;
+  }
+  
+  return formatted;
+}
+
+function forceSequenceSolution(text) {
+  let formatted = 'SEQUENCE SOLUTION\n\n';
+  
+  // Extract numbers
+  const numbers = text.match(/-?\d+/g);
+  
+  if (numbers && numbers.length >= 2) {
+    formatted += 'COMPLETE SEQUENCE:\n' + numbers.join(', ') + '\n\n';
+    
+    // Find pattern
+    const diff = parseInt(numbers[1]) - parseInt(numbers[0]);
+    if (!isNaN(diff)) {
+      formatted += 'Common Difference: ' + diff + '\n';
+      formatted += 'Number of Terms: ' + numbers.length + '\n';
+      
+      // Next terms
+      if (numbers.length >= 2) {
+        const last = parseInt(numbers[numbers.length - 1]);
+        const next1 = last + diff;
+        const next2 = next1 + diff;
+        const next3 = next2 + diff;
+        formatted += 'Next Terms: ' + next1 + ', ' + next2 + ', ' + next3 + '\n';
+      }
+    }
+    
+    // Extract explanation
+    const explanation = text.replace(/[\d,\s-]+/g, '').trim();
+    if (explanation && explanation.length > 10) {
+      formatted += '\nEXPLANATION:\n' + explanation.substring(0, 300);
+    }
+  } else {
+    formatted += text;
+  }
+  
+  return formatted;
+}
+
+function ensureFinalAnswer(text) {
+  // If text doesn't have a clear answer, try to extract one
+  if (!text.includes('answer') && !text.includes('solution') && !text.includes('result')) {
+    const numbers = text.match(/-?\d+/g);
+    if (numbers && numbers.length > 0) {
+      return 'ANSWER:\n' + text + '\n\nFinal Answer: ' + numbers.join(', ');
+    }
+  }
+  return text;
 }
 
 function splitMessage(text, maxLength) {
