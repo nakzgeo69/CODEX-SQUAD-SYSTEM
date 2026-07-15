@@ -3,263 +3,367 @@ const { sendMessage } = require('../handles/sendMessage');
 
 module.exports = {
   name: ['gemini'],
-  description: 'Auto-analyze images and solve puzzles using Gemini AI',
-  usage: 'Send an image and the bot will auto-analyze it',
-  version: '2.0.0',
+  description: 'Analyze images and answer questions using Gemini AI',
+  usage: 'Send an image and the bot will analyze it',
+  version: '3.0.0',
   author: 'codex',
   category: 'AI',
-  cooldown: 5,
+  cooldown: 10,
 
   async execute(senderId, args, token, event) {
     try {
-      let imageUrl = await extractImageUrl(event, token);
+      const imageUrl = await this.extractImageUrl(event, token);
 
       if (!imageUrl) {
+        await sendMessage(senderId, { text: 'Please send an image or reply to an image.' }, token);
         return;
       }
 
-      console.log('[gemini] Processing image:', imageUrl);
+      const userPrompt = args.join(' ').trim();
+      const prompt = this.buildPrompt(userPrompt);
+      const apiUrl = `https://norch-project.gleeze.com/api/gemini?prompt=${encodeURIComponent(prompt)}&imageurl=${encodeURIComponent(imageUrl)}`;
 
-      const userPrompt = args.join(' ').toLowerCase();
-      let prompt = '';
+      let response = null;
+      let attempts = 0;
+      const maxAttempts = 3;
 
-      // FORCE SOLVE - no analyze/describe only
-      if (userPrompt.includes('sudoku') || userPrompt.includes('soduko')) {
-        prompt = 'IMPORTANT: This is a Sudoku puzzle. DO NOT just analyze or describe it. SOLVE it completely. Provide the FULL SOLVED GRID with Row 1 to Row 9. Then briefly explain the key steps. The answer must include the complete solved grid.';
-      } else if (userPrompt.includes('sequence') || userPrompt.includes('arithmetic')) {
-        prompt = 'IMPORTANT: This is an arithmetic sequence. DO NOT just analyze it. SOLVE it completely. Find the common difference, the number of terms, and provide the COMPLETE SEQUENCE. Show the formula and final answer.';
-      } else if (userPrompt.includes('math') || userPrompt.includes('equation')) {
-        prompt = 'IMPORTANT: This is a math problem. DO NOT just analyze it. SOLVE it completely. Show the solution steps and provide the FINAL ANSWER.';
-      } else if (userPrompt.includes('logic')) {
-        prompt = 'IMPORTANT: This is a logic puzzle. DO NOT just analyze it. SOLVE it completely. Explain the reasoning and provide the FINAL ANSWER.';
-      } else if (userPrompt.includes('pattern')) {
-        prompt = 'IMPORTANT: This is a pattern puzzle. DO NOT just analyze it. SOLVE it completely. Find the pattern and provide the NEXT ITEMS.';
-      } else {
-        prompt = 'IMPORTANT: DO NOT just analyze or describe this image. If it is a puzzle, SOLVE it and provide the COMPLETE SOLUTION. If it is a question, ANSWER it directly. Provide the FINAL ANSWER.';
+      while (attempts < maxAttempts) {
+        try {
+          attempts++;
+          
+          response = await axios.get(apiUrl, {
+            timeout: 90000,
+            headers: { 'Accept': 'application/json' },
+            maxContentLength: 50 * 1024 * 1024,
+            maxBodyLength: 50 * 1024 * 1024,
+            validateStatus: function (status) {
+              return status >= 200 && status < 300;
+            }
+          });
+
+          if (response.status === 200 && response.data) {
+            break;
+          }
+
+        } catch (error) {
+          console.log(`[gemini] Attempt ${attempts} failed:`, error.message);
+          
+          if (attempts >= maxAttempts) {
+            throw error;
+          }
+
+          if (error.response?.status === 429) {
+            await new Promise(resolve => setTimeout(resolve, 10000));
+          } else if (error.response?.status >= 500) {
+            await new Promise(resolve => setTimeout(resolve, 5000));
+          } else if (error.code === 'ECONNABORTED') {
+            await new Promise(resolve => setTimeout(resolve, 3000));
+          } else {
+            await new Promise(resolve => setTimeout(resolve, 2000));
+          }
+        }
       }
 
-      const encodedPrompt = encodeURIComponent(prompt);
-      const encodedImageUrl = encodeURIComponent(imageUrl);
-      const apiUrl = `https://norch-project.gleeze.com/api/gemini?prompt=${encodedPrompt}&imageurl=${encodedImageUrl}`;
+      if (!response || !response.data) {
+        throw new Error('No response from API');
+      }
 
-      const response = await axios.get(apiUrl, {
-        timeout: 60000,
-        headers: {
-          'Accept': 'application/json'
-        }
-      });
+      let cleanResponse = this.processResponse(response.data.response || '');
+      
+      if (!cleanResponse || cleanResponse.length < 10) {
+        await sendMessage(senderId, { text: 'Unable to analyze. Please try again with a clearer image.' }, token);
+        return;
+      }
 
-      if (response.status === 200 && response.data) {
-        const data = response.data;
-        
-        let cleanResponse = data.response || 'No response from Gemini API.';
-        
-        // Remove unnecessary text but keep solution
-        cleanResponse = cleanResponse
-          .replace(/^I'm a Gemini.*?model.*?\n\n?/i, '')
-          .replace(/^Here is my analysis.*?\n/i, '')
-          .replace(/^Let me analyze.*?\n/i, '')
-          .replace(/^The image appears to be.*?\n/i, '')
-          .replace(/^Based on my analysis.*?\n/i, '')
-          .replace(/^I can see that.*?\n/i, '')
-          .replace(/^This looks like.*?\n/i, '')
-          .replace(/^Upon examination.*?\n/i, '')
-          .replace(/^After analyzing.*?\n/i, '')
-          .replace(/^The image shows.*?\n/i, '')
-          .replace(/^This is a.*?\n/i, '')
-          .replace(/\*\*/g, '')
-          .replace(/\*/g, '')
-          .replace(/#{1,6}\s/g, '')
-          .replace(/`/g, '')
-          .replace(/_/g, '')
-          .replace(/~{2}/g, '')
-          .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
-          .replace(/\n{3,}/g, '\n\n')
-          .trim();
-
-        // Force format for specific puzzle types with full solution
-        if (userPrompt.includes('sudoku')) {
-          cleanResponse = forceSudokuSolution(cleanResponse);
-        } else if (userPrompt.includes('sequence')) {
-          cleanResponse = forceSequenceSolution(cleanResponse);
-        } else {
-          // For other types, ensure there's a final answer
-          cleanResponse = ensureFinalAnswer(cleanResponse);
-        }
-
-        if (!cleanResponse || cleanResponse.length < 10) {
-          cleanResponse = 'Unable to solve. Please try again with a clearer image.';
-        }
-
-        const chunks = splitMessage(cleanResponse, 1900);
-        for (const chunk of chunks) {
-          await sendMessage(senderId, { text: chunk }, token);
-        }
-        
-      } else {
-        throw new Error('Invalid response from Gemini API');
+      cleanResponse = cleanResponse.substring(0, 8000);
+      const chunks = this.splitMessage(cleanResponse, 1900);
+      
+      for (const chunk of chunks) {
+        await sendMessage(senderId, { text: chunk }, token);
+        await new Promise(resolve => setTimeout(resolve, 300));
       }
       
     } catch (error) {
       console.error('[gemini] Error:', error.message);
-
-      let errorMessage = 'Error analyzing image. ';
-      
-      if (error.code === 'ECONNABORTED' || error.message.includes('timeout')) {
-        errorMessage = 'The image is too large or the server is taking too long. Please try compressing the image.';
-      } else if (error.response?.status === 400) {
-        errorMessage = 'Invalid image format. Please send a valid image.';
-      } else if (error.response?.status === 500) {
-        errorMessage = 'The API server is currently unavailable. Please try again later.';
-      } else if (error.response?.status === 429) {
-        errorMessage = 'Rate limit exceeded. Please wait a moment.';
-      } else {
-        errorMessage += error.message || 'Failed to connect to the API.';
-      }
-
-      await sendMessage(senderId, {
-        text: errorMessage
-      }, token);
+      const errorMessage = this.getErrorMessage(error);
+      await sendMessage(senderId, { text: errorMessage }, token);
     }
-  }
-};
+  },
 
-async function extractImageUrl(event, token) {
-  try {
-    if (event?.message?.reply_to?.mid) {
-      return await getRepliedImage(event.message.reply_to.mid, token);
-    } 
+  buildPrompt(userPrompt) {
+    let prompt = `Analyze this image and provide an accurate response.
+
+CONTENT DETECTION:
+- If the image contains mathematical expressions, equations, or number problems: Solve them completely. Show step-by-step solution and provide the final answer.
+- If the image contains puzzles, logic problems, or questions: Provide the correct answer with clear explanation.
+- If the image contains text, documents, or written content: Extract and summarize the information accurately.
+- If the image contains logos, photos, artwork, or scenes: Provide detailed description and analysis of what you see, including context and notable details.
+
+IMPORTANT RULES:
+- For math: Show complete solution steps using plain text. Use words like plus, minus, times, divided by, equals.
+- For analysis: Provide thorough description with observations and context.
+- Be precise and accurate. Double-check your calculations and reasoning.
+- If the image is unclear or ambiguous, state that clearly.
+- Do not ask questions. Provide the complete response directly.
+
+FORMAT:
+- For problems: Provide SOLUTION with steps, EXPLANATION of reasoning, FINAL ANSWER.
+- For analysis: Provide ANALYSIS with DETAILS and CONTEXT.`;
+
+    if (userPrompt) {
+      prompt += `\n\nUSER QUESTION: ${userPrompt}`;
+    }
+
+    return prompt;
+  },
+
+  processResponse(response) {
+    let processed = response || '';
+
+    processed = this.cleanFormatting(processed);
+    processed = this.validateMathAccuracy(processed);
+    processed = this.enhanceAnalysis(processed);
+
+    return processed;
+  },
+
+  cleanFormatting(response) {
+    let cleaned = response;
+
+    cleaned = cleaned
+      .replace(/\$/g, '')
+      .replace(/\\[a-zA-Z]+/g, '')
+      .replace(/\*\*/g, '')
+      .replace(/\*/g, '')
+      .replace(/#{1,6}\s/g, '')
+      .replace(/`/g, '')
+      .replace(/_/g, '')
+      .replace(/~{2}/g, '')
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+      .replace(/\n{3,}/g, '\n\n')
+      .replace(/^I'?m?\s+a?\s*Gemini.*?model.*?\n\n?/i, '')
+      .replace(/^Here is my analysis.*?\n/i, '')
+      .replace(/^Let me analyze.*?\n/i, '')
+      .replace(/^The image appears to be.*?\n/i, '')
+      .replace(/^Based on my analysis.*?\n/i, '')
+      .replace(/^I can see that.*?\n/i, '')
+      .replace(/^This looks like.*?\n/i, '')
+      .replace(/^Upon examination.*?\n/i, '')
+      .replace(/^After analyzing.*?\n/i, '')
+      .replace(/^The image shows.*?\n/i, '')
+      .trim();
+
+    return cleaned;
+  },
+
+  validateMathAccuracy(response) {
+    const hasMath = this.detectMath(response);
     
-    if (event?.message?.attachments && event.message.attachments.length > 0) {
-      for (const attachment of event.message.attachments) {
-        if (attachment.type === 'image' || attachment.type === 'photo') {
-          return attachment.payload?.url || attachment.url || null;
+    if (hasMath) {
+      let validated = response;
+      
+      const numbers = response.match(/-?\d+\.?\d*/g);
+      if (numbers && numbers.length > 0) {
+        const calculations = this.extractCalculations(response);
+        if (calculations.length > 0) {
+          for (const calc of calculations) {
+            const result = this.solveMath(calc);
+            if (result !== null) {
+              validated = validated.replace(calc, result);
+            }
+          }
         }
       }
-    }
-  } catch (err) {
-    console.error('[Image Extraction] Failed:', err);
-  }
-  return null;
-}
-
-async function getRepliedImage(mid, token) {
-  try {
-    const url = `https://graph.facebook.com/v21.0/${mid}/attachments`;
-    const params = {
-      access_token: token
-    };
-    const { data } = await axios.get(url, { params });
-    
-    if (data?.data && data.data.length > 0) {
-      const attachment = data.data[0];
-      return attachment?.image_data?.url || attachment?.url || null;
-    }
-    return null;
-  } catch (err) {
-    console.error('[Replied Image] Failed:', err.response?.data || err.message);
-    return null;
-  }
-}
-
-function forceSudokuSolution(text) {
-  let formatted = 'SOLVED SUDOKU\n\n';
-  
-  // Extract all numbers from text
-  const numbers = text.match(/\d+/g);
-  
-  if (numbers && numbers.length >= 81) {
-    formatted += 'COMPLETE SOLUTION:\n';
-    for (let i = 0; i < 9; i++) {
-      const row = numbers.slice(i * 9, (i + 1) * 9);
-      formatted += 'Row ' + (i + 1) + ': ' + row.join('  ') + '\n';
-    }
-    formatted += '\n';
-    
-    // Extract any explanation
-    const explanation = text.replace(/[\d\s]+/g, '').trim();
-    if (explanation && explanation.length > 10) {
-      formatted += 'EXPLANATION:\n' + explanation.substring(0, 300) + '\n';
-    }
-  } else {
-    // If no grid found, return the cleaned text
-    formatted += text;
-  }
-  
-  return formatted;
-}
-
-function forceSequenceSolution(text) {
-  let formatted = 'SEQUENCE SOLUTION\n\n';
-  
-  // Extract numbers
-  const numbers = text.match(/-?\d+/g);
-  
-  if (numbers && numbers.length >= 2) {
-    formatted += 'COMPLETE SEQUENCE:\n' + numbers.join(', ') + '\n\n';
-    
-    // Find pattern
-    const diff = parseInt(numbers[1]) - parseInt(numbers[0]);
-    if (!isNaN(diff)) {
-      formatted += 'Common Difference: ' + diff + '\n';
-      formatted += 'Number of Terms: ' + numbers.length + '\n';
       
-      // Next terms
-      if (numbers.length >= 2) {
-        const last = parseInt(numbers[numbers.length - 1]);
-        const next1 = last + diff;
-        const next2 = next1 + diff;
-        const next3 = next2 + diff;
-        formatted += 'Next Terms: ' + next1 + ', ' + next2 + ', ' + next3 + '\n';
+      return validated;
+    }
+    
+    return response;
+  },
+
+  detectMath(response) {
+    const mathIndicators = [
+      'plus', 'minus', 'times', 'divided by', 'equals',
+      '=', '+', '-', '*', '/', 'x', '÷',
+      'solve', 'calculate', 'equation', 'formula',
+      'sum', 'product', 'difference', 'quotient',
+      'square', 'cube', 'root', 'power', 'exponent'
+    ];
+    
+    const lowerResponse = response.toLowerCase();
+    for (const indicator of mathIndicators) {
+      if (lowerResponse.includes(indicator)) {
+        return true;
       }
     }
     
-    // Extract explanation
-    const explanation = text.replace(/[\d,\s-]+/g, '').trim();
-    if (explanation && explanation.length > 10) {
-      formatted += '\nEXPLANATION:\n' + explanation.substring(0, 300);
-    }
-  } else {
-    formatted += text;
-  }
-  
-  return formatted;
-}
+    const numbers = response.match(/\d+/g);
+    return numbers && numbers.length > 0;
+  },
 
-function ensureFinalAnswer(text) {
-  // If text doesn't have a clear answer, try to extract one
-  if (!text.includes('answer') && !text.includes('solution') && !text.includes('result')) {
-    const numbers = text.match(/-?\d+/g);
-    if (numbers && numbers.length > 0) {
-      return 'ANSWER:\n' + text + '\n\nFinal Answer: ' + numbers.join(', ');
-    }
-  }
-  return text;
-}
+  extractCalculations(response) {
+    const operations = response.match(/\d+\s*[+\-*/x÷]\s*\d+/g);
+    return operations || [];
+  },
 
-function splitMessage(text, maxLength) {
-  maxLength = maxLength || 1900;
-  const chunks = [];
-  
-  if (text.length <= maxLength) {
-    return [text];
-  }
-  
-  const lines = text.split('\n');
-  let currentChunk = '';
-  
-  for (const line of lines) {
-    if (currentChunk.length + line.length + 1 > maxLength) {
+  solveMath(expression) {
+    try {
+      let sanitized = expression.replace(/[^0-9+\-*/.]/g, '');
+      
+      if (!sanitized.match(/^[\d+\-*/.]*$/)) {
+        return null;
+      }
+      
+      const result = Function('"use strict"; return (' + sanitized + ')')();
+      
+      if (typeof result === 'number' && !isNaN(result)) {
+        return expression + ' = ' + result;
+      }
+      
+      return null;
+    } catch (error) {
+      return null;
+    }
+  },
+
+  enhanceAnalysis(response) {
+    const hasAnalysis = this.detectAnalysis(response);
+    
+    if (hasAnalysis) {
+      let enhanced = response;
+      
+      if (!response.includes('ANALYSIS:') && !response.includes('DESCRIPTION:')) {
+        enhanced = 'ANALYSIS:\n\n' + enhanced;
+      }
+      
+      if (response.length < 100) {
+        enhanced = enhanced + '\n\nIf you need more specific information about this image, please ask a follow-up question.';
+      }
+      
+      return enhanced;
+    }
+    
+    return response;
+  },
+
+  detectAnalysis(response) {
+    const analysisIndicators = [
+      'image shows', 'logo', 'photo', 'picture', 'artwork',
+      'document', 'scene', 'location', 'person', 'object',
+      'color', 'design', 'brand', 'establishment'
+    ];
+    
+    const lowerResponse = response.toLowerCase();
+    for (const indicator of analysisIndicators) {
+      if (lowerResponse.includes(indicator)) {
+        return true;
+      }
+    }
+    
+    return false;
+  },
+
+  getErrorMessage(error) {
+    if (error.code === 'ECONNABORTED' || error.message.includes('timeout')) {
+      return 'Server is busy. Please wait a moment and try again.';
+    }
+    
+    if (error.response?.status === 400) {
+      return 'Invalid image format. Please send a valid image.';
+    }
+    
+    if (error.response?.status === 500 || error.response?.status === 502 || error.response?.status === 503) {
+      return 'Server is currently down. Please try again later.';
+    }
+    
+    if (error.response?.status === 429) {
+      return 'API rate limit reached. Please wait a moment and try again.';
+    }
+    
+    if (error.response?.status === 413) {
+      return 'Image too large. Please compress and try again.';
+    }
+
+    if (error.code === 'ENOTFOUND' || error.code === 'ECONNREFUSED') {
+      return 'Connection failed. Please check your internet connection.';
+    }
+    
+    return 'Error analyzing image. Please try again.';
+  },
+
+  async extractImageUrl(event, token) {
+    try {
+      if (event?.message?.reply_to?.mid) {
+        return await this.getRepliedImage(event.message.reply_to.mid, token);
+      }
+      
+      if (event?.message?.attachments && event.message.attachments.length > 0) {
+        for (const attachment of event.message.attachments) {
+          if (attachment.type === 'image' || attachment.type === 'photo') {
+            const url = attachment.payload?.url || attachment.url || null;
+            if (url) {
+              const urlObj = new URL(url);
+              urlObj.searchParams.set('access_token', token);
+              return urlObj.toString();
+            }
+          }
+        }
+      }
+    } catch (err) {
+      console.error('[Image Extraction] Failed:', err);
+    }
+    return null;
+  },
+
+  async getRepliedImage(mid, token) {
+    try {
+      const url = `https://graph.facebook.com/v21.0/${mid}/attachments`;
+      const params = { access_token: token };
+      
+      const response = await axios.get(url, { 
+        params,
+        timeout: 30000
+      });
+      
+      if (response?.data?.data && response.data.data.length > 0) {
+        const attachment = response.data.data[0];
+        const imageUrl = attachment?.image_data?.url || attachment?.url || null;
+        if (imageUrl) {
+          const urlObj = new URL(imageUrl);
+          urlObj.searchParams.set('access_token', token);
+          return urlObj.toString();
+        }
+      }
+      return null;
+    } catch (err) {
+      console.error('[Replied Image] Failed:', err.response?.data || err.message);
+      return null;
+    }
+  },
+
+  splitMessage(text, maxLength) {
+    const chunks = [];
+    
+    if (text.length <= maxLength) {
+      return [text];
+    }
+    
+    const lines = text.split('\n');
+    let currentChunk = '';
+    
+    for (const line of lines) {
+      if (currentChunk.length + line.length + 1 > maxLength) {
+        chunks.push(currentChunk.trim());
+        currentChunk = line + '\n';
+      } else {
+        currentChunk += line + '\n';
+      }
+    }
+    
+    if (currentChunk.trim()) {
       chunks.push(currentChunk.trim());
-      currentChunk = line + '\n';
-    } else {
-      currentChunk += line + '\n';
     }
+    
+    return chunks;
   }
-  
-  if (currentChunk.trim()) {
-    chunks.push(currentChunk.trim());
-  }
-  
-  return chunks;
-}
+};
