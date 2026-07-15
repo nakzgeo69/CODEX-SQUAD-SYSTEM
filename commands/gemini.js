@@ -113,24 +113,31 @@ CONTENT TYPES:
 - History: Provide historical context, significance, lessons
 - General: Provide analysis, observations, helpful suggestions
 
-For EVERY response, ALWAYS include:
-1. ANALYSIS - Detailed analysis of what you see
-2. TIPS WITH EXAMPLES - Practical suggestions with specific examples
-3. REAL-WORLD APPLICATIONS WITH EXAMPLES - How to apply in real life
-4. NEXT STEPS WITH EXAMPLES - Actionable steps with clear examples
+For EVERY response, ALWAYS include this structure:
 
-IMPORTANT:
+1. ANALYSIS - Detailed analysis of what you see
+2. THEREFORE / CORE POINT - The main conclusion, key insight, or final answer
+3. TIPS WITH EXAMPLES - Practical suggestions with specific examples
+4. REAL-WORLD APPLICATIONS WITH EXAMPLES - How to apply in real life
+5. NEXT STEPS WITH EXAMPLES - Actionable steps with clear examples
+
+IMPORTANT RULES:
+- The THEREFORE/CORE POINT section must clearly state the main takeaway
+- For problems: State the final answer in THEREFORE
+- For analysis: State the core insight in THEREFORE
+- For questions: State the direct answer in THEREFORE
+- Make it clear, concise, and impactful
 - Generate content based on what you SEE in the image
-- Do not repeat previous responses
-- Be specific to the image content
 - Use plain text only. No symbols, no markdown
-- If the image is unclear, state that clearly and provide general guidance
 
 RESPONSE FORMAT:
 [TITLE/HEADER]
 
 ANALYSIS:
 [Detailed analysis of the image]
+
+THEREFORE:
+[The main conclusion, core point, final answer, or key insight]
 
 TIPS WITH EXAMPLES:
 1. [Tip] - Example: [Specific example]
@@ -156,6 +163,7 @@ NEXT STEPS WITH EXAMPLES:
     let processed = response || '';
 
     processed = this.cleanFormatting(processed);
+    processed = this.ensureThereforeSection(processed);
 
     return processed;
   },
@@ -187,6 +195,52 @@ NEXT STEPS WITH EXAMPLES:
       .trim();
 
     return cleaned;
+  },
+
+  ensureThereforeSection(response) {
+    let withTherefore = response;
+    const lowerResponse = response.toLowerCase();
+
+    // Check if response already has therefore or core point
+    const hasTherefore = lowerResponse.includes('therefore') || 
+                         lowerResponse.includes('core point') ||
+                         lowerResponse.includes('main takeaway') ||
+                         lowerResponse.includes('final answer') ||
+                         lowerResponse.includes('key insight') ||
+                         lowerResponse.includes('conclusion') ||
+                         lowerResponse.includes('summary');
+
+    if (!hasTherefore) {
+      // Try to extract or add a therefore section
+      const lines = response.split('\n');
+      let analysisEnd = 0;
+      let foundAnalysis = false;
+
+      for (let i = 0; i < lines.length; i++) {
+        if (lines[i].toLowerCase().includes('analysis:') || 
+            lines[i].toLowerCase().includes('analysis')) {
+          foundAnalysis = true;
+          continue;
+        }
+        if (foundAnalysis && lines[i].trim() === '') {
+          analysisEnd = i;
+          break;
+        }
+      }
+
+      if (analysisEnd > 0) {
+        // Insert THEREFORE after analysis
+        const before = lines.slice(0, analysisEnd).join('\n');
+        const after = lines.slice(analysisEnd).join('\n');
+        
+        withTherefore = before + '\n\nTHEREFORE:\n[Core insight based on the analysis above]\n\n' + after;
+      } else {
+        // Add THEREFORE at the beginning
+        withTherefore = 'THEREFORE:\n[Main conclusion from the image]\n\n' + response;
+      }
+    }
+
+    return withTherefore;
   },
 
   getErrorMessage(error) {
