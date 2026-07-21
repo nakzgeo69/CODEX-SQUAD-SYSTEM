@@ -17,18 +17,11 @@ module.exports = {
       let prompt = args.join(' ').trim();
       let previousResponse = null;
       let isReply = false;
-      let isImageReply = false;
-      let imageUrl = null;
 
       if (event?.message?.reply_to?.mid) {
         isReply = true;
         const replyData = await this.getRepliedMessageData(event.message.reply_to.mid, token);
         previousResponse = replyData.message;
-        imageUrl = replyData.imageUrl;
-        
-        if (imageUrl) {
-          isImageReply = true;
-        }
         
         if (!prompt) {
           prompt = 'Please respond to what I said.';
@@ -36,30 +29,27 @@ module.exports = {
       }
 
       if (!prompt && !isReply) {
-        const helpResponse = 'Hello. I am Teacher Arlene from C0D3X SQU4D PENETRATORS, your AI Assistant. How can I assist you today?';
-        await sendMessage(senderId, { text: helpResponse }, token);
+        await sendMessage(senderId, { 
+          text: 'Hello. I am Teacher Arlene from C0D3X SQU4D PENETRATORS, your AI Assistant. How can I assist you today?' 
+        }, token);
         return;
       }
 
-      const isOwnerQuestion = this.isOwnerQuestion(prompt);
-      if (isOwnerQuestion) {
-        const ownerResponse = 'I was created by GeoDevz69. Visit here for more clarifications:\nhttps://www.facebook.com/geotechph.net';
-        await sendMessage(senderId, { text: ownerResponse }, token);
+      if (this.isOwnerQuestion(prompt)) {
+        await sendMessage(senderId, { 
+          text: 'I was created by GeoDevz69. Visit here for more clarifications:\nhttps://www.facebook.com/geotechph.net' 
+        }, token);
         return;
       }
 
-      const isUserInfoQuestion = this.isUserInfoQuestion(prompt);
-      if (isUserInfoQuestion) {
+      if (this.isUserInfoQuestion(prompt)) {
         await this.handleUserInfo(senderId, prompt, token);
         return;
       }
 
-      let finalPrompt = this.buildFinalPrompt(prompt, previousResponse, isReply, isImageReply);
-
-      let response = await this.callAPI(finalPrompt, imageUrl);
-
-      let aiResponse = response || 'No response from API.';
-      aiResponse = this.cleanResponse(aiResponse);
+      let finalPrompt = this.buildFinalPrompt(prompt, previousResponse, isReply);
+      let response = await this.callAPI(finalPrompt);
+      let aiResponse = this.cleanResponse(response || 'No response from API.');
 
       if (isReply && this.isTranslationRequest(prompt)) {
         const targetLanguage = this.detectTargetLanguage(prompt);
@@ -70,59 +60,44 @@ module.exports = {
 
     } catch (error) {
       console.error('[ai] Error:', error.message);
-      const errorMessage = this.getErrorMessage(error);
-      await sendMessage(senderId, { text: errorMessage }, token);
+      await sendMessage(senderId, { text: this.getErrorMessage(error) }, token);
     }
   },
 
   getApiConfig() {
     return {
-      url: 'https://betadash-api-swordslush-production.up.railway.app/opera',
+      url: 'https://free-goat-api.onrender.com/rapidai',
       method: 'GET',
-      responsePath: 'message',
-      successField: 'success',
+      responsePath: 'result',
+      successField: 'status',
       timeout: 60000,
       imageSupport: false,
       headers: {}
     };
   },
 
-  async callAPI(prompt, imageUrl = null) {
+  async callAPI(prompt) {
     const config = this.getApiConfig();
     let retries = 3;
     let lastError = null;
 
     while (retries > 0) {
       try {
-        let response;
+        const encodedPrompt = encodeURIComponent(prompt);
+        const apiUrl = `${config.url}?message=${encodedPrompt}`;
         
-        if (config.method === 'GET') {
-          const encodedPrompt = encodeURIComponent(prompt);
-          let apiUrl = `${config.url}?ask=${encodedPrompt}`;
-          
-          if (imageUrl && config.imageSupport) {
-            const encodedImage = encodeURIComponent(imageUrl);
-            apiUrl += `&imageurl=${encodedImage}`;
-          }
-          
-          response = await axios.get(apiUrl, {
-            timeout: config.timeout,
-            headers: { 'Accept': 'application/json', ...config.headers }
-          });
-        } else {
-          const payload = {
-            prompt: prompt,
-            ...(imageUrl && config.imageSupport ? { image: imageUrl } : {})
-          };
-          
-          response = await axios.post(config.url, payload, {
-            timeout: config.timeout,
-            headers: { 'Content-Type': 'application/json', ...config.headers }
-          });
-        }
+        const response = await axios.get(apiUrl, {
+          timeout: config.timeout,
+          headers: { 'Accept': 'application/json', ...config.headers }
+        });
 
         const data = response.data;
-        let extracted = this.extractResponse(data, config);
+        
+        if (data.status !== true) {
+          throw new Error('API returned error status');
+        }
+        
+        const extracted = this.extractResponse(data, config);
         
         if (extracted) {
           return this.standardizeResponse(extracted);
@@ -159,12 +134,7 @@ module.exports = {
       }
     }
 
-    const formats = [
-      'response', 'message', 'text', 'content',
-      'choices.0.text', 'choices.0.message.content',
-      'data.message', 'data.response'
-    ];
-
+    const formats = ['result', 'response', 'data', 'message', 'text', 'content'];
     for (const format of formats) {
       const path = format.split('.');
       let value = data;
@@ -185,9 +155,7 @@ module.exports = {
   },
 
   standardizeResponse(response) {
-    let standardized = response;
-
-    standardized = standardized
+    return response
       .replace(/^I'?m?\s+a?\s*AI.*?model.*?\n\n?/i, '')
       .replace(/^As an AI.*?\n\n?/i, '')
       .replace(/^Here is my response.*?\n/i, '')
@@ -195,11 +163,9 @@ module.exports = {
       .replace(/^Based on my knowledge.*?\n/i, '')
       .replace(/^I can help you.*?\n/i, '')
       .trim();
-
-    return standardized;
   },
 
-  buildFinalPrompt(prompt, previousResponse, isReply, isImageReply) {
+  buildFinalPrompt(prompt, previousResponse, isReply) {
     let finalPrompt = '';
 
     if (isReply && previousResponse) {
@@ -268,25 +234,25 @@ module.exports = {
   },
 
   isOwnerQuestion(prompt) {
-    const ownerKeywords = [
+    const keywords = [
       'who is your owner', 'who created you', 'who made you',
       'sino gumawa sayo', 'sino may ari sayo', 'owner mo',
       'sino owner mo', 'who owns you', 'creator', 'developer'
     ];
-    return ownerKeywords.some(keyword => prompt.toLowerCase().includes(keyword.toLowerCase()));
+    return keywords.some(keyword => prompt.toLowerCase().includes(keyword.toLowerCase()));
   },
 
   isUserInfoQuestion(prompt) {
-    const userInfoKeywords = [
+    const keywords = [
       'what is my name', 'ano pangalan ko', 'my name', 'pangalan ko',
       'when is my birthday', 'kelan birthday ko', 'my birthday',
       'who am i', 'sino ako', 'whats my name'
     ];
-    return userInfoKeywords.some(keyword => prompt.toLowerCase().includes(keyword.toLowerCase()));
+    return keywords.some(keyword => prompt.toLowerCase().includes(keyword.toLowerCase()));
   },
 
   isTranslationRequest(prompt) {
-    const translationKeywords = [
+    const keywords = [
       'translate', 'translate to', 'translate into', 'translate in',
       'translation', 'isalin', 'salin', 'ipasalin', 'isalin sa',
       'tagalog', 'bisaya', 'cebuano', 'spanish', 'filipino', 
@@ -302,15 +268,13 @@ module.exports = {
       'norwegian', 'danish', 'finnish', 'polish', 'czech',
       'hungarian', 'romanian', 'bulgarian', 'serbian', 'croatian'
     ];
-    const promptLower = prompt.toLowerCase();
-    return translationKeywords.some(keyword => promptLower.includes(keyword.toLowerCase()));
+    return keywords.some(keyword => prompt.toLowerCase().includes(keyword.toLowerCase()));
   },
 
   detectTargetLanguage(prompt) {
     const promptLower = prompt.toLowerCase();
     
     const languages = {
-      // Philippine Languages
       'tagalog': 'Tagalog',
       'filipino': 'Filipino',
       'bisaya': 'Bisaya',
@@ -322,10 +286,6 @@ module.exports = {
       'pangasinan': 'Pangasinan',
       'bicolano': 'Bicolano',
       'chavacano': 'Chavacano',
-      'ibanag': 'Ibanag',
-      'ivatan': 'Ivatan',
-      
-      // Asian Languages
       'chinese': 'Chinese',
       'mandarin': 'Mandarin',
       'cantonese': 'Cantonese',
@@ -354,8 +314,6 @@ module.exports = {
       'gujarati': 'Gujarati',
       'kannada': 'Kannada',
       'malayalam': 'Malayalam',
-      
-      // European Languages
       'english': 'English',
       'spanish': 'Spanish',
       'french': 'French',
@@ -394,7 +352,6 @@ module.exports = {
   async translateResponse(text, targetLanguage) {
     try {
       const translatePrompt = `Translate this text to ${targetLanguage}. Only provide the translation, no other text. Do not include the original text. Here is the text to translate: ${text}`;
-      
       const response = await this.callAPI(translatePrompt);
       return response || text;
     } catch (error) {
@@ -413,23 +370,13 @@ module.exports = {
       
       const { data } = await axios.get(url, { params });
       
-      let imageUrl = null;
-      if (data?.attachments?.data) {
-        for (const attachment of data.attachments.data) {
-          if (attachment.type === 'image' || attachment.type === 'photo') {
-            imageUrl = attachment?.image_data?.url || attachment?.url || null;
-            break;
-          }
-        }
-      }
-      
       return {
         message: data?.message || null,
-        imageUrl: imageUrl
+        from: data?.from?.id || null
       };
     } catch (error) {
       console.error('[Get Replied Message] Failed:', error.message);
-      return { message: null, imageUrl: null };
+      return { message: null, from: null };
     }
   },
 
@@ -443,8 +390,7 @@ module.exports = {
       }
 
       if (prompt.toLowerCase().includes('birthday') || prompt.toLowerCase().includes('kelan')) {
-        const birthdayMsg = userInfo.birthday ? `\nYour birthday is ${userInfo.birthday}.` : '\nI cannot tell you that because it is confidential.';
-        response += birthdayMsg;
+        response += userInfo.birthday ? `\nYour birthday is ${userInfo.birthday}.` : '\nI cannot tell you that because it is confidential.';
       }
 
       if (!response) {
@@ -525,9 +471,7 @@ module.exports = {
     cleaned = cleaned.replace(/[\u{2700}-\u{27BF}]/gu, '');
     cleaned = cleaned.replace(/[\u{24C2}-\u{1F251}]/gu, '');
 
-    cleaned = cleaned.trim();
-
-    return cleaned || 'No response.';
+    return cleaned.trim() || 'No response.';
   },
 
   getErrorMessage(error) {
@@ -560,8 +504,8 @@ module.exports = {
 
   async sendChunks(senderId, text, token) {
     const chunks = this.splitMessage(text);
-    for (let i = 0; i < chunks.length; i++) {
-      await sendMessage(senderId, { text: chunks[i] }, token);
+    for (const chunk of chunks) {
+      await sendMessage(senderId, { text: chunk }, token);
     }
   }
 };
