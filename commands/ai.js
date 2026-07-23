@@ -2,7 +2,7 @@ const axios = require('axios');
 const { sendMessage } = require('../handles/sendMessage');
 
 const MAX_CHUNK = 1900;
-const conversationHistory = {}; // { senderId: { lastPrompt, lastResponse, timestamp } }
+const conversationHistory = {};
 
 module.exports = {
   name: ['ai', 'opera', 'ask'],
@@ -30,14 +30,11 @@ module.exports = {
       }
 
       if (!isReply && prompt) {
-        // ✅ Get history for THIS USER only
         const history = conversationHistory[senderId];
         if (history && history.lastResponse) {
           const lowerPrompt = prompt.toLowerCase();
-          
           const isFollowUp = this.isFollowUpRequest(lowerPrompt) || 
                             this.isContextualQuestion(lowerPrompt, history.lastPrompt);
-          
           const isNewTopic = this.isNewTopic(lowerPrompt, history.lastPrompt);
           
           if (isFollowUp && !isNewTopic) {
@@ -45,7 +42,6 @@ module.exports = {
             previousPrompt = history.lastPrompt;
             isReply = true;
           } else {
-            // Clear THIS USER's memory for new topic
             delete conversationHistory[senderId];
           }
         }
@@ -74,7 +70,11 @@ module.exports = {
       const response = await this.callAPI(finalPrompt);
       let aiResponse = this.cleanResponse(response || 'No response from API.');
 
-      // ✅ Store memory for THIS USER only
+      // ✅ NEW: Shorten response if not a follow-up
+      if (!isReply) {
+        aiResponse = this.shortenResponse(aiResponse);
+      }
+
       conversationHistory[senderId] = {
         lastPrompt: prompt,
         lastResponse: aiResponse,
@@ -96,52 +96,28 @@ module.exports = {
     }
   },
 
-  // ✅ NEW: Detect if user is starting a new topic
-  isNewTopic(prompt, previousPrompt) {
-    if (!previousPrompt) return true;
+  // ✅ NEW: Shorten response function
+  shortenResponse(text) {
+    if (!text) return text;
     
-    const newTopicIndicators = [
-      'hello', 'hi', 'hey', 'good morning', 'good afternoon', 'good evening',
-      'kamusta', 'musta', 'kumusta', 'musta na', 'kumusta ka',
-      'oy', 'oi', 'hoy', 'ei', 'ey',
-      'good day', 'greetings', 'sup', 'whats up', 'whassup',
-      'magandang umaga', 'magandang tanghali', 'magandang hapon', 'magandang gabi',
-      'maayong buntag', 'maayong udto', 'maayong hapon', 'maayong gabii',
-      'naimbag nga bigat', 'naimbag nga malem', 'naimbag nga rabii',
-      'ask', 'tanong', 'question', 'tungkol sa',
-      'about', 'regarding', 'sa', 'about sa',
-      'i want to ask', 'gusto kong itanong',
-      'can i ask', 'pwede magtanong',
-      'new topic', 'bagong topic',
-      'change topic', 'change subject', 'ibang topic', 'iba naman',
-      'next topic', 'lipat tayo', 'move on',
-      'what is', 'what are', 'what does', 'what do',
-      'ano ang', 'ano ba', 'ano yung', 'ano iyong',
-      'sino ang', 'sino ba', 'sino yung', 'sino iyong',
-      'bakit', 'paano', 'kailan', 'saan',
-      'why', 'how', 'when', 'where', 'who', 'which',
-      'tell me about', 'tell me', 'tell about',
-      'explain', 'define', 'describe',
-      'give me', 'give', 'show me',
-      'can you tell', 'could you tell',
-      'please explain', 'please tell',
-      'do you know', 'did you know',
-      'have you heard', 'have you seen',
-      'is it true', 'is that true',
-      'really', 'seriously',
-      'today', 'now', 'currently',
-      'recently', 'lately',
-      'nowadays', 'these days',
-      'this time', 'this day'
-    ];
+    // Split into sentences
+    const sentences = text.split(/(?<=[.!?])\s+/);
     
-    if (prompt.length < 10 && !this.isFollowUpRequest(prompt)) {
-      return true;
+    // Keep only first 3-4 sentences for concise response
+    let concise = sentences.slice(0, 3).join(' ');
+    
+    // If response is still long, trim further
+    if (concise.length > 500) {
+      concise = concise.substring(0, 500) + '...';
     }
     
-    return newTopicIndicators.some(indicator => 
-      prompt.includes(indicator)
-    );
+    // Remove redundant phrases
+    concise = concise
+      .replace(/^(In summary|To summarize|In conclusion|Basically|Essentially|Simply put|In other words|That said|Having said that|With that said)\s*,?\s*/i, '')
+      .replace(/\s{2,}/g, ' ')
+      .trim();
+    
+    return concise || text;
   },
 
   isContextualQuestion(prompt, previousPrompt) {
@@ -245,7 +221,52 @@ module.exports = {
     return keywords.some(keyword => prompt.includes(keyword));
   },
 
-  // ✅ Clean old history per user
+  isNewTopic(prompt, previousPrompt) {
+    if (!previousPrompt) return true;
+    
+    const newTopicIndicators = [
+      'hello', 'hi', 'hey', 'good morning', 'good afternoon', 'good evening',
+      'kamusta', 'musta', 'kumusta', 'musta na', 'kumusta ka',
+      'oy', 'oi', 'hoy', 'ei', 'ey',
+      'good day', 'greetings', 'sup', 'whats up', 'whassup',
+      'magandang umaga', 'magandang tanghali', 'magandang hapon', 'magandang gabi',
+      'maayong buntag', 'maayong udto', 'maayong hapon', 'maayong gabii',
+      'ask', 'tanong', 'question', 'tungkol sa',
+      'about', 'regarding', 'sa', 'about sa',
+      'i want to ask', 'gusto kong itanong',
+      'can i ask', 'pwede magtanong',
+      'new topic', 'bagong topic',
+      'change topic', 'change subject', 'ibang topic', 'iba naman',
+      'next topic', 'lipat tayo', 'move on',
+      'what is', 'what are', 'what does', 'what do',
+      'ano ang', 'ano ba', 'ano yung', 'ano iyong',
+      'sino ang', 'sino ba', 'sino yung', 'sino iyong',
+      'bakit', 'paano', 'kailan', 'saan',
+      'why', 'how', 'when', 'where', 'who', 'which',
+      'tell me about', 'tell me', 'tell about',
+      'explain', 'define', 'describe',
+      'give me', 'give', 'show me',
+      'can you tell', 'could you tell',
+      'please explain', 'please tell',
+      'do you know', 'did you know',
+      'have you heard', 'have you seen',
+      'is it true', 'is that true',
+      'really', 'seriously',
+      'today', 'now', 'currently',
+      'recently', 'lately',
+      'nowadays', 'these days',
+      'this time', 'this day'
+    ];
+    
+    if (prompt.length < 10 && !this.isFollowUpRequest(prompt)) {
+      return true;
+    }
+    
+    return newTopicIndicators.some(indicator => 
+      prompt.includes(indicator)
+    );
+  },
+
   cleanOldHistory() {
     const now = Date.now();
     const maxAge = 30 * 60 * 1000;
@@ -450,6 +471,13 @@ module.exports = {
       }
     } else {
       finalPrompt = prompt;
+    }
+
+    // ✅ ADDED: Concise instruction for new conversations
+    if (!isReply) {
+      finalPrompt += 'CRITICAL: Provide a SHORT, DIRECT, and CONCISE answer. No long explanations.\n';
+      finalPrompt += 'Be straight to the point. Answer directly without extra fluff.\n';
+      finalPrompt += 'Maximum 3-4 sentences or 2-3 paragraphs for complex topics.\n\n';
     }
 
     finalPrompt += 'IMPORTANT GUIDELINES:\n';
