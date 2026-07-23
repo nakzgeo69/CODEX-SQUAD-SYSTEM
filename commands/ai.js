@@ -66,12 +66,14 @@ module.exports = {
         return;
       }
 
-      const finalPrompt = this.buildFinalPrompt(prompt, previousResponse, previousPrompt, isReply);
-      const response = await this.callAPI(finalPrompt);
+      
+      const wantsDetailed = this.wantsDetailedAnswer(prompt);
+      
+      const finalPrompt = this.buildFinalPrompt(prompt, previousResponse, previousPrompt, isReply, wantsDetailed);
+      const response = await this.callAPI(finalPrompt, senderId);
       let aiResponse = this.cleanResponse(response || 'No response from API.');
 
-      // ✅ NEW: Shorten response if not a follow-up
-      if (!isReply) {
+      if (!isReply && !wantsDetailed) {
         aiResponse = this.shortenResponse(aiResponse);
       }
 
@@ -96,22 +98,32 @@ module.exports = {
     }
   },
 
-  // ✅ NEW: Shorten response function
+
+  wantsDetailedAnswer(prompt) {
+    const lowerPrompt = prompt.toLowerCase();
+    const detailedKeywords = [
+      'explain more', 'more explanation', 'more details', 'detailed', 'detail',
+      'elaborate', 'elaborate more', 'paki elaborate', 'mas detalyado',
+      'tell me more', 'give more info', 'dagdagan', 'dagdag',
+      'further explain', 'further explanation', 'full explanation',
+      'complete explanation', 'in depth', 'in-depth', 'thorough',
+      'comprehensive', 'expound', 'pakilinaw', 'linawin',
+      'more information', 'additional info', 'karagdagang',
+      'can you explain further', 'please elaborate'
+    ];
+    return detailedKeywords.some(keyword => lowerPrompt.includes(keyword));
+  },
+
   shortenResponse(text) {
     if (!text) return text;
     
-    // Split into sentences
     const sentences = text.split(/(?<=[.!?])\s+/);
-    
-    // Keep only first 3-4 sentences for concise response
     let concise = sentences.slice(0, 3).join(' ');
     
-    // If response is still long, trim further
-    if (concise.length > 500) {
-      concise = concise.substring(0, 500) + '...';
+    if (concise.length > 400) {
+      concise = concise.substring(0, 400) + '...';
     }
     
-    // Remove redundant phrases
     concise = concise
       .replace(/^(In summary|To summarize|In conclusion|Basically|Essentially|Simply put|In other words|That said|Having said that|With that said)\s*,?\s*/i, '')
       .replace(/\s{2,}/g, ' ')
@@ -289,7 +301,7 @@ module.exports = {
     };
   },
 
-  async callAPI(prompt) {
+  async callAPI(prompt, senderId) {
     const config = this.getApiConfig();
     let retries = 3;
     let lastError = null;
@@ -297,7 +309,8 @@ module.exports = {
     while (retries > 0) {
       try {
         const encodedPrompt = encodeURIComponent(prompt);
-        const apiUrl = `${config.url}?prompt=${encodedPrompt}&model=openai&user=123`;
+      
+        const apiUrl = `${config.url}?prompt=${encodedPrompt}&model=openai&user=${senderId}`;
         const response = await axios.get(apiUrl, {
           timeout: config.timeout,
           headers: { 'Accept': 'application/json', ...config.headers }
@@ -374,7 +387,7 @@ module.exports = {
       .trim();
   },
 
-  buildFinalPrompt(prompt, previousResponse, previousPrompt, isReply) {
+  buildFinalPrompt(prompt, previousResponse, previousPrompt, isReply, wantsDetailed) {
     let finalPrompt = '';
 
     if (previousResponse) {
@@ -405,7 +418,8 @@ module.exports = {
       } else if (lowerPrompt.includes('elaborate') || lowerPrompt.includes('explain more') || 
                  lowerPrompt.includes('paki elaborate') || lowerPrompt.includes('detail') ||
                  lowerPrompt.includes('further') || lowerPrompt.includes('paliwanag') ||
-                 lowerPrompt.includes('ipaliwanag') || lowerPrompt.includes('elab')) {
+                 lowerPrompt.includes('ipaliwanag') || lowerPrompt.includes('elab') ||
+                 lowerPrompt.includes('more details') || lowerPrompt.includes('mas detalyado')) {
         finalPrompt += 'User wants you to elaborate on your previous response.\n';
         finalPrompt += 'Provide a detailed explanation with more information, context, and examples.\n';
         finalPrompt += 'Expand on each point thoroughly.\n\n';
@@ -473,23 +487,24 @@ module.exports = {
       finalPrompt = prompt;
     }
 
-    // ✅ ADDED: Concise instruction for new conversations
-    if (!isReply) {
-      finalPrompt += 'CRITICAL: Provide a SHORT, DIRECT, and CONCISE answer. No long explanations.\n';
-      finalPrompt += 'Be straight to the point. Answer directly without extra fluff.\n';
-      finalPrompt += 'Maximum 3-4 sentences or 2-3 paragraphs for complex topics.\n\n';
+    if (wantsDetailed) {
+      finalPrompt += 'USER WANTS DETAILED ANSWER: Provide a comprehensive, thorough, and detailed explanation.\n';
+      finalPrompt += 'Include examples, context, and complete information.\n\n';
+    } else {
+      finalPrompt += 'USER WANTS CONCISE ANSWER: Provide a SHORT, DIRECT, and ACCURATE response.\n';
+      finalPrompt += 'Be straight to the point. Maximum 2-3 sentences or 1-2 paragraphs.\n';
+      finalPrompt += 'No unnecessary explanations. Just the key facts.\n\n';
     }
 
     finalPrompt += 'IMPORTANT GUIDELINES:\n';
     finalPrompt += '- Be accurate and precise in your response.\n';
-    finalPrompt += '- Provide complete and thorough answers.\n';
     finalPrompt += '- For math problems, show step-by-step solution.\n';
-    finalPrompt += '- For analysis, provide detailed description and context.\n';
+    finalPrompt += '- For analysis, provide clear description.\n';
     finalPrompt += '- Use plain text only. No symbols or markdown.\n';
     finalPrompt += '- If unsure, state that clearly.\n';
     finalPrompt += '- Do not ask questions back. Just provide the complete response.\n';
-    finalPrompt += '- Continue the conversation naturally and acknowledge the previous context.\n';
-    finalPrompt += '- Be friendly and engaging in your responses.\n';
+    finalPrompt += '- Continue the conversation naturally.\n';
+    finalPrompt += '- Be friendly and engaging.\n';
 
     return finalPrompt;
   },
