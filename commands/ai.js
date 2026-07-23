@@ -92,7 +92,6 @@ module.exports = {
     if (!previousPrompt) return false;
     
     const contextualPatterns = [
-      // Filipino/Tagalog
       'so yan', 'so ito', 'so iyan', 'so yun', 'so ganyan', 'so ganito', 'so ganun',
       'yan na ba', 'yun na ba', 'ito na ba', 'ganyan na ba', 'ganun na ba',
       'tama ba', 'tama', 'correct', 'right',
@@ -113,105 +112,44 @@ module.exports = {
       'so ah', 'so okay',
       'talaga', 'really', 'sure',
       'so talaga', 'so sure',
-      
-      // English
       'so that', 'so this', 'so it',
       'so about', 'so regarding',
       'so basically', 'so essentially',
-      'so in other words', 'so simply put',
       'so you mean', 'so you saying',
-      'so what youre saying', 'so what your saying',
-      'so what you mean',
-      'so the point is', 'so the bottom line',
-      'so the thing is',
-      'so here is', 'so here are',
-      'so now', 'so then',
-      'so far', 'so good',
-      'so much', 'so many',
-      'so true', 'so real',
-      
-      // Bisaya/Cebuano
       'mao na', 'mao ni', 'mao to', 'mao diay',
       'mao ba', 'mao jud', 'mao gyud',
       'so mao', 'so mao na',
-      'sakto ba', 'sakto', 'tama ba',
-      'ingon ana', 'ingon ani', 'ingon ato',
+      'sakto ba', 'sakto',
+      'ingon ana', 'ingon ani',
       'so ingon', 'so ingon ana',
-      'unsa man', 'unsa', 'what about',
+      'unsa man', 'unsa',
       'na gets', 'nakasabot', 'nasabtan',
       'so nakasabot', 'so nasabtan',
       'aw', 'aw okay', 'ah okay',
-      
-      // Ilocano
-      'kasta', 'kastoy', 'kastoy nga',
-      'so kasta', 'so kastoy',
-      'umuna', 'so umuna',
-      'awan', 'so awan',
-      
-      // Waray
-      'amo na', 'amo ini', 'amo ito',
-      'so amo', 'so amo na',
-      'tama ba', 'so tama',
-      
-      // Hiligaynon
-      'amo na', 'amo ni', 'amo to',
-      'so amo', 'so amo na',
-      
-      // Kapampangan
-      'iyan', 'ini', 'ita',
-      'so iyan', 'so ini',
-      
-      // Informal/Slang
-      'so', 'sow', 'sow', 'sow',
-      'eh', 'e', 'a', 'ah', 'oh', 'ay',
+      'so', 'sow', 'eh', 'e', 'a', 'ah', 'oh', 'ay',
       'ha', 'heh', 'hmm', 'hm', 'mmm',
-      'wehh', 'we', 'wehh', 'weh',
-      'char', 'charot', 'charizz', 'charr',
-      'emz', 'ems', 'em',
-      'gagi', 'gago', 'gaga', 'gaga',
-      'lodi', 'lods', 'lodi',
-      'bes', 'besh', 'beshy', 'beshie',
-      'mars', 'mhie', 'mhi',
-      'sis', 'siz', 'sissy',
-      'bro', 'brah', 'bruh',
-      'dude', 'doods',
-      'pre', 'pare', 'par',
-      'tol', 'tols',
-      'boss', 'bosing',
-      'sir', 'maam', 'madam',
-      'miss', 'ms',
-      
-      // Short forms
-      'k', 'ok', 'oki', 'okie', 'okies',
-      'cge', 'sige', 'ge', 'ges',
-      'oo', 'opo', 'oho',
-      'hindi', 'hnd', 'ndi', 'dili',
-      'oo nga', 'opo nga',
-      'tama', 'tma', 'tm',
-      'mali', 'ml',
-      'gets', 'gts', 'gtz',
-      'gets ko', 'gts ko',
-      'nagets', 'ngts',
-      'sabi mo', 'sbi mo', 'sabi',
-      'kasi', 'ksi', 'kz',
-      'kaya', 'kya',
-      'nga', 'na', 'pa', 'ba',
-      'din', 'rin', 'lang', 'lng',
-      'naman', 'nman', 'nmn',
-      'talaga', 'tlga', 'tlag',
-      
-      // Question starters
-      'ano', 'anu', 'nao', 'nau',
-      'sino', 'sinu',
-      'bakit', 'bkt', 'bat',
-      'paano', 'pano', 'panu',
-      'kailan', 'klan', 'kelan',
-      'saan', 'san',
-      'ilan', 'ilu',
-      'magkano', 'magknu',
-      'saan galing', 'san galing',
-      'paano gawin', 'pano gawin',
-      'ano ibig sabihin', 'anu ibig sabihin'
+      'wehh', 'we', 'weh',
+      'char', 'charot', 'gagi', 'lodi',
+      'bes', 'mars', 'mhie', 'sis', 'bro', 'pre', 'pare',
+      'tol', 'boss', 'sir', 'maam',
+      'k', 'ok', 'oki', 'okie', 'cge', 'sige', 'ge', 'ges',
+      'oo', 'opo', 'hnd', 'ndi', 'dili',
+      'tma', 'tm', 'ml', 'gts', 'gtz', 'ngts',
+      'sbi', 'ksi', 'kz', 'kya', 'tlga', 'tlag',
+      'nman', 'nmn', 'lng', 'pg', 'ng', 'sa', 'ko', 'mo',
+      'ano yan', 'ano yun', 'ano ito', 'ano iyan',
+      'bakit ganun', 'bakit ganyan', 'bakit ganito',
+      'paano yan', 'paano yun', 'paano ito',
+      'saan yan', 'saan yun', 'saan ito',
+      'sino yan', 'sino yun', 'sino ito',
+      'kanino', 'kaninong',
+      'ilan yan', 'ilan yun', 'ilan ito',
+      'magkano yan', 'magkano yun', 'magkano ito',
+      'sige', 'cge', 'ge', 'ges', 'okay', 'ok', 'oki',
+      'yes', 'yeah', 'yep', 'yup', 'uh huh',
+      'no', 'nope', 'nah', 'uh uh',
+      'thanks', 'thank you', 'salamat', 'tnx', 'ty',
+      'welcome', 'walang anuman', 'youre welcome'
     ];
     
     const isRelated = contextualPatterns.some(pattern => 
@@ -229,172 +167,45 @@ module.exports = {
 
   isFollowUpRequest(prompt) {
     const keywords = [
-      // Translation - Full
       'translate', 'translate to', 'translate into', 'translate in',
       'translation', 'isalin', 'salin', 'ipasalin', 'isalin sa',
-      
-      // Translation - Short
-      'transl', 'trans', 'translate',
-      'isalin mo', 'salin mo', 'isalin sa',
+      'transl', 'trans', 'tl', 'bis', 'ceb', 'eng', 'spa',
       'tagalog', 'bisaya', 'cebuano', 'spanish', 'filipino',
       'english', 'ilocano', 'waray', 'hiligaynon', 'kapampangan',
-      'pangasinan', 'bicolano', 'chinese', 'mandarin', 'cantonese',
-      'japanese', 'nihongo', 'korean', 'hangeul', 'french',
-      'francais', 'german', 'deutsch', 'italian', 'italiano',
-      'portuguese', 'russian', 'arabic', 'hindi', 'urdu',
-      'bengali', 'tamil', 'telugu', 'marathi', 'gujarati',
-      'kannada', 'malayalam', 'thai', 'vietnamese', 'indonesian',
-      'malay', 'burmese', 'khmer', 'lao', 'nepali', 'sinhala',
-      'armenian', 'hebrew', 'greek', 'latin', 'dutch', 'swedish',
-      'norwegian', 'danish', 'finnish', 'polish', 'czech',
-      'hungarian', 'romanian', 'bulgarian', 'serbian', 'croatian',
-      
-      // Translation - Very Short
-      'tl', 'bis', 'ceb', 'eng', 'spa', 'fr', 'de', 'it', 'pt', 'ru', 'ar', 'hi', 'ja', 'ko', 'zh',
-      
-      // Elaboration - Full
-      'elaborate', 'elaborate further', 'explain more', 'explain it well',
-      'paki elaborate', 'paki explain', 'paliwanag', 'ipaliwanag',
+      'elaborate', 'elaborate further', 'explain more', 'paki elaborate',
+      'paki explain', 'paliwanag', 'ipaliwanag', 'elab', 'explain',
       'detail', 'further', 'more details', 'mas detalyado',
-      
-      // Elaboration - Short
-      'elab', 'explain', 'paliwanag', 'paliwanag mo', 'ipaliwanag',
-      'dagdag', 'dagdagan', 'add more', 'more info', 'karagdagang',
-      
-      // Summary - Full
       'summarize', 'summary', 'i-summarize', 'brief', 'make it short',
-      'short', 'concise', 'shorten', 'pinaikli', 'paikliin',
-      'make it concise', 'make it brief', 'saglit',
-      
-      // Summary - Short
-      'sum', 'brief', 'short', 'ikli', 'paikliin', 'pinaikli',
-      'gawing maikli', 'maikli', 'make short',
-      
-      // Simplification - Full
+      'short', 'concise', 'shorten', 'sum', 'ikli', 'paikliin',
       'simplify', 'simple', 'pasimplehin', 'basic', 'simplified',
-      'simplify it', 'make it simple', 'simple explanation',
-      
-      // Simplification - Short
-      'simp', 'simple', 'basic', 'madali', 'dali', 'gawing simple',
-      
-      // Examples - Full
-      'example', 'sample', 'halimbawa', 'instance', 'give example',
-      'give examples', 'provide example', 'provide examples',
-      'magbigay ng halimbawa', 'halimbawa nito',
-      
-      // Examples - Short
-      'eg', 'ex', 'hal', 'sample', 'examples',
-      
-      // Correction - Full
+      'simp', 'madali', 'dali', 'gawing simple',
+      'example', 'sample', 'halimbawa', 'instance', 'eg', 'ex', 'hal',
+      'give example', 'give examples', 'magbigay ng halimbawa',
       'correct', 'fix', 'tama', 'ayusin', 'improve', 'better',
-      'improved', 'i-correct', 'i-fix', 'iwasto', 'tama ba',
-      
-      // Correction - Short
-      'fix', 'correct', 'tama', 'ayos', 'wasto',
-      
-      // Addition - Full
+      'improved', 'i-correct', 'i-fix', 'iwasto',
       'add', 'additional', 'dagdagan', 'more', 'add more',
-      'additional info', 'additional information', 'karagdagang impormasyon',
-      
-      // Addition - Short
-      'add', 'more', 'dagdag',
-      
-      // Humanize - Full
+      'dagdag', 'karagdagang',
       'humanize', 'make it human', 'conversational', 'natural',
-      'make it natural', 'parang tao', 'human-like',
-      'gawing natural', 'gawing conversational', 'gawing tao',
-      
-      // Humanize - Short
-      'human', 'natural', 'convo', 'make natural',
-      
-      // Confirmation - Full
+      'make it natural', 'parang tao', 'human-like', 'human',
+      'gawing natural', 'gawing tao',
       'tama ba', 'correct ba', 'right ba', 'sure ba', 'talaga',
       'really', 'are you sure', 'sigurado ka',
-      
-      // Confirmation - Short
-      'tama', 'sure', 'talaga', 'really',
-      
-      // Clarification - Full
-      'clarify', 'clarification', 'paliwanag', 'linawin',
-      'clear', 'make clear', 'make it clear', 'linawin mo',
-      
-      // Clarification - Short
-      'clear', 'linaw', 'paliwanag',
-      
-      // Repetition - Full
+      'clarify', 'clarification', 'linawin', 'clear', 'make clear',
       'ulit', 'repeat', 'say again', 'paulit', 'ulitin',
-      'paki-ulit', 'pakiulit', 'ulitin mo',
-      
-      // Repetition - Short
-      'ulit', 'repeat', 'again',
-      
-      // Understanding - Full
+      'paki-ulit', 'pakiulit', 'again',
       'gets', 'nagets', 'naintindihan', 'understand',
-      'naiintindihan', 'gets ko', 'nagets ko',
-      'i understand', 'i get it', 'i got it',
-      
-      // Understanding - Short
-      'gets', 'gots', 'got it', 'gets ko',
-      
-      // Agreement - Full
+      'naiintindihan', 'gets ko', 'nagets ko', 'gots', 'got it',
       'oo', 'opo', 'sige', 'cge', 'okay', 'ok',
-      'agree', 'tama', 'yes', 'yeah', 'yep',
-      
-      // Agreement - Short
-      'oo', 'op', 'cge', 'ge', 'ok', 'yes', 'ye',
-      
-      // Disagreement - Full
+      'agree', 'yes', 'yeah', 'yep',
       'hindi', 'dili', 'no', 'not', 'mali',
       'disagree', 'hindi tama', 'mali yan',
-      
-      // Disagreement - Short
-      'hnd', 'dili', 'no', 'mali',
-      
-      // Question words - Full
       'what', 'why', 'how', 'when', 'where', 'who', 'which',
       'ano', 'bakit', 'paano', 'kailan', 'saan', 'sino', 'alin',
-      'what about', 'how about', 'what if', 'how if',
-      
-      // Question words - Short
       'wut', 'y', 'hau', 'wen', 'wer', 'hu', 'wich',
       'anu', 'bkt', 'pano', 'klan', 'san', 'sinu', 'aln',
-      
-      // Filipino connectors
       'kasi', 'dahil', 'kaya', 'nga', 'na', 'pa', 'ba',
       'din', 'rin', 'lang', 'lng', 'naman', 'nman', 'nmn',
-      'talaga', 'tlga', 'tlag', 'kaya', 'kya',
-      'sabi mo', 'sbi mo', 'sabi', 'sinabi',
-      
-      // Interjections
-      'ay', 'ah', 'oh', 'eh', 'ha', 'hmm', 'hm', 'mmm',
-      'wehh', 'weh', 'char', 'charot', 'gagi', 'lodi',
-      'bes', 'mars', 'mhie', 'sis', 'bro', 'pre', 'pare',
-      'tol', 'boss', 'sir', 'maam',
-      
-      // Short forms
-      'k', 'ok', 'oki', 'okie', 'cge', 'sige', 'ge', 'ges',
-      'oo', 'opo', 'oho', 'hnd', 'ndi', 'dili',
-      'tma', 'tm', 'ml', 'gts', 'gtz', 'ngts',
-      'sbi', 'ksi', 'kz', 'kya', 'tlga', 'tlag',
-      'nman', 'nmn', 'lng', 'pg', 'ng', 'sa', 'ko', 'mo',
-      'nyo', 'namin', 'natin', 'niya', 'nila',
-      
-      // Common phrases
-      'ano yan', 'ano yun', 'ano ito', 'ano iyan',
-      'bakit ganun', 'bakit ganyan', 'bakit ganito',
-      'paano yan', 'paano yun', 'paano ito',
-      'saan yan', 'saan yun', 'saan ito',
-      'sino yan', 'sino yun', 'sino ito',
-      'kanino', 'kaninong',
-      'ilan yan', 'ilan yun', 'ilan ito',
-      'magkano yan', 'magkano yun', 'magkano ito',
-      
-      // Responses
-      'sige', 'cge', 'ge', 'ges', 'okay', 'ok', 'oki',
-      'yes', 'yeah', 'yep', 'yup', 'uh huh',
-      'no', 'nope', 'nah', 'uh uh',
-      'thanks', 'thank you', 'salamat', 'tnx', 'ty',
-      'welcome', 'walang anuman', 'youre welcome'
+      'talaga', 'tlga', 'tlag', 'sabi mo', 'sbi mo'
     ];
     
     return keywords.some(keyword => prompt.includes(keyword));
@@ -410,11 +221,12 @@ module.exports = {
     }
   },
 
+  // ✅ UPDATED: OpenAI API Configuration
   getApiConfig() {
     return {
-      url: 'https://free-goat-api.onrender.com/rapidai',
+      url: 'https://api-library-kohi-production.up.railway.app/api/pollination-ai',
       method: 'GET',
-      responsePath: 'result',
+      responsePath: 'data',
       successField: 'status',
       timeout: 60000,
       imageSupport: false,
@@ -430,7 +242,8 @@ module.exports = {
     while (retries > 0) {
       try {
         const encodedPrompt = encodeURIComponent(prompt);
-        const apiUrl = `${config.url}?message=${encodedPrompt}`;
+        // ✅ Using OpenAI model
+        const apiUrl = `${config.url}?prompt=${encodedPrompt}&model=openai&user=123`;
         const response = await axios.get(apiUrl, {
           timeout: config.timeout,
           headers: { 'Accept': 'application/json', ...config.headers }
@@ -476,7 +289,7 @@ module.exports = {
       }
     }
 
-    const formats = ['result', 'response', 'data', 'message', 'text', 'content'];
+    const formats = ['data', 'result', 'response', 'message', 'text', 'content'];
     for (const format of formats) {
       const path = format.split('.');
       let value = data;
@@ -531,17 +344,14 @@ module.exports = {
       } else if (lowerPrompt.includes('humanize') || lowerPrompt.includes('make it human') || 
                  lowerPrompt.includes('conversational') || lowerPrompt.includes('natural') ||
                  lowerPrompt.includes('make it natural') || lowerPrompt.includes('parang tao') ||
-                 lowerPrompt.includes('human-like') || lowerPrompt.includes('human') ||
-                 lowerPrompt.includes('gawing natural') || lowerPrompt.includes('gawing tao')) {
+                 lowerPrompt.includes('human-like') || lowerPrompt.includes('human')) {
         finalPrompt += 'User wants you to make your previous response more human and conversational.\n';
         finalPrompt += 'Rewrite it in a natural, friendly, and engaging tone.\n';
-        finalPrompt += 'Use simple language, add personality, and make it sound like a real person talking.\n';
-        finalPrompt += 'Keep the same meaning but make it more natural and easy to understand.\n\n';
+        finalPrompt += 'Use simple language, add personality, and make it sound like a real person talking.\n\n';
       } else if (lowerPrompt.includes('elaborate') || lowerPrompt.includes('explain more') || 
                  lowerPrompt.includes('paki elaborate') || lowerPrompt.includes('detail') ||
                  lowerPrompt.includes('further') || lowerPrompt.includes('paliwanag') ||
-                 lowerPrompt.includes('ipaliwanag') || lowerPrompt.includes('dagdag') ||
-                 lowerPrompt.includes('dagdagan')) {
+                 lowerPrompt.includes('ipaliwanag') || lowerPrompt.includes('elab')) {
         finalPrompt += 'User wants you to elaborate on your previous response.\n';
         finalPrompt += 'Provide a detailed explanation with more information, context, and examples.\n';
         finalPrompt += 'Expand on each point thoroughly.\n\n';
@@ -550,13 +360,13 @@ module.exports = {
                  lowerPrompt.includes('make it short') || lowerPrompt.includes('short') ||
                  lowerPrompt.includes('concise') || lowerPrompt.includes('shorten') ||
                  lowerPrompt.includes('paikliin') || lowerPrompt.includes('ikli') ||
-                 lowerPrompt.includes('maikli') || lowerPrompt.includes('gawing maikli')) {
+                 lowerPrompt.includes('sum')) {
         finalPrompt += 'User wants a concise summary of your previous response.\n';
         finalPrompt += 'Provide only the most important key points in a short, clear, and direct manner.\n\n';
       } else if (lowerPrompt.includes('simplify') || lowerPrompt.includes('simple') || 
                  lowerPrompt.includes('pasimplehin') || lowerPrompt.includes('basic') ||
                  lowerPrompt.includes('simplified') || lowerPrompt.includes('madali') ||
-                 lowerPrompt.includes('gawing simple') || lowerPrompt.includes('dali')) {
+                 lowerPrompt.includes('simp')) {
         finalPrompt += 'User wants a simpler explanation.\n';
         finalPrompt += 'Explain using simple words and layman terms.\n\n';
       } else if (lowerPrompt.includes('example') || lowerPrompt.includes('sample') || 
@@ -566,35 +376,32 @@ module.exports = {
         finalPrompt += 'Provide relevant examples to illustrate your points.\n\n';
       } else if (lowerPrompt.includes('correct') || lowerPrompt.includes('fix') || 
                  lowerPrompt.includes('tama') || lowerPrompt.includes('ayusin') ||
-                 lowerPrompt.includes('improve') || lowerPrompt.includes('better') ||
-                 lowerPrompt.includes('improved') || lowerPrompt.includes('iwasto')) {
+                 lowerPrompt.includes('improve') || lowerPrompt.includes('better')) {
         finalPrompt += 'User wants you to correct or improve your previous response.\n';
         finalPrompt += 'Review and provide an improved version.\n\n';
       } else if (lowerPrompt.includes('add') || lowerPrompt.includes('additional') || 
                  lowerPrompt.includes('dagdagan') || lowerPrompt.includes('more') ||
-                 lowerPrompt.includes('dagdag') || lowerPrompt.includes('add more')) {
+                 lowerPrompt.includes('dagdag')) {
         finalPrompt += 'User wants additional information.\n';
         finalPrompt += 'Add more details, examples, or context.\n\n';
       } else if (lowerPrompt.includes('ulit') || lowerPrompt.includes('repeat') || 
-                 lowerPrompt.includes('paulit') || lowerPrompt.includes('again') ||
-                 lowerPrompt.includes('paki-ulit') || lowerPrompt.includes('pakiulit')) {
+                 lowerPrompt.includes('again') || lowerPrompt.includes('paki-ulit')) {
         finalPrompt += 'User wants you to repeat or re-explain your previous response.\n';
         finalPrompt += 'Provide the same information but in a clearer way.\n\n';
       } else if (lowerPrompt.includes('gets') || lowerPrompt.includes('nagets') || 
                  lowerPrompt.includes('naintindihan') || lowerPrompt.includes('understand') ||
-                 lowerPrompt.includes('gets ko') || lowerPrompt.includes('gots')) {
+                 lowerPrompt.includes('gots')) {
         finalPrompt += 'User is acknowledging understanding of your previous response.\n';
         finalPrompt += 'Respond positively and offer to provide more information if needed.\n\n';
       } else if (lowerPrompt.includes('tama ba') || lowerPrompt.includes('correct ba') || 
-                 lowerPrompt.includes('right ba') || lowerPrompt.includes('sure ba') ||
-                 lowerPrompt.includes('talaga') || lowerPrompt.includes('really') ||
-                 lowerPrompt.includes('sigurado ka')) {
+                 lowerPrompt.includes('sure ba') || lowerPrompt.includes('talaga') ||
+                 lowerPrompt.includes('really')) {
         finalPrompt += 'User is asking for confirmation about your previous response.\n';
         finalPrompt += 'Confirm if your previous response is accurate and provide additional proof if needed.\n\n';
       } else if (lowerPrompt.includes('oo') || lowerPrompt.includes('opo') || 
                  lowerPrompt.includes('sige') || lowerPrompt.includes('cge') ||
-                 lowerPrompt.includes('okay') || lowerPrompt.includes('ok') ||
-                 lowerPrompt.includes('yes') || lowerPrompt.includes('agree')) {
+                 lowerPrompt.includes('okay') || lowerPrompt.includes('yes') ||
+                 lowerPrompt.includes('agree')) {
         finalPrompt += 'User is agreeing with your previous response.\n';
         finalPrompt += 'Acknowledge the agreement and offer to provide more information.\n\n';
       } else if (lowerPrompt.includes('hindi') || lowerPrompt.includes('dili') || 
