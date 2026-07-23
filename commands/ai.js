@@ -29,17 +29,26 @@ module.exports = {
         }
       }
 
+      // ✅ NEW: Check if this is a new topic or continuation
       if (!isReply && prompt) {
         const history = conversationHistory[senderId];
         if (history && history.lastResponse) {
           const lowerPrompt = prompt.toLowerCase();
+          
+          // Check if it's a follow-up or new topic
           const isFollowUp = this.isFollowUpRequest(lowerPrompt) || 
                             this.isContextualQuestion(lowerPrompt, history.lastPrompt);
           
-          if (isFollowUp) {
+          // ✅ NEW: Check if it's a greeting or new topic starter
+          const isNewTopic = this.isNewTopic(lowerPrompt, history.lastPrompt);
+          
+          if (isFollowUp && !isNewTopic) {
             previousResponse = history.lastResponse;
             previousPrompt = history.lastPrompt;
             isReply = true;
+          } else {
+            // ✅ NEW: Clear memory for new topic
+            delete conversationHistory[senderId];
           }
         }
       }
@@ -88,6 +97,73 @@ module.exports = {
     }
   },
 
+  // ✅ NEW: Detect if user is starting a new topic
+  isNewTopic(prompt, previousPrompt) {
+    if (!previousPrompt) return true;
+    
+    const newTopicIndicators = [
+      // Greetings
+      'hello', 'hi', 'hey', 'good morning', 'good afternoon', 'good evening',
+      'kamusta', 'musta', 'kumusta', 'musta na', 'kumusta ka',
+      'oy', 'oi', 'hoy', 'ei', 'ey',
+      'good day', 'greetings', 'sup', 'whats up', 'whassup',
+      
+      // Filipino greetings
+      'magandang umaga', 'magandang tanghali', 'magandang hapon', 'magandang gabi',
+      'maayong buntag', 'maayong udto', 'maayong hapon', 'maayong gabii',
+      'naimbag nga bigat', 'naimbag nga malem', 'naimbag nga rabii',
+      
+      // New topic starters
+      'ask', 'tanong', 'question', 'tungkol sa',
+      'about', 'regarding', 'sa', 'about sa',
+      'i want to ask', 'gusto kong itanong',
+      'can i ask', 'pwede magtanong',
+      'new topic', 'bagong topic',
+      
+      // Change subject
+      'change topic', 'change subject', 'ibang topic', 'iba naman',
+      'next topic', 'lipat tayo', 'move on',
+      
+      // Questions about new things
+      'what is', 'what are', 'what does', 'what do',
+      'ano ang', 'ano ba', 'ano yung', 'ano iyong',
+      'sino ang', 'sino ba', 'sino yung', 'sino iyong',
+      'bakit', 'paano', 'kailan', 'saan',
+      'why', 'how', 'when', 'where', 'who', 'which',
+      
+      // Requests for new information
+      'tell me about', 'tell me', 'tell about',
+      'explain', 'define', 'describe',
+      'give me', 'give', 'show me',
+      'can you tell', 'could you tell',
+      'please explain', 'please tell',
+      
+      // Random questions
+      'do you know', 'did you know',
+      'have you heard', 'have you seen',
+      'is it true', 'is that true',
+      'really', 'seriously',
+      
+      // Time-based new topics
+      'today', 'now', 'currently',
+      'recently', 'lately',
+      'nowadays', 'these days',
+      'this time', 'this day'
+    ];
+    
+    // Check if prompt is a greeting or new topic starter
+    const isNew = newTopicIndicators.some(indicator => 
+      prompt.includes(indicator)
+    );
+    
+    // If prompt is very short, it might be a new topic (e.g., "hello", "hi")
+    if (prompt.length < 10 && !this.isFollowUpRequest(prompt)) {
+      return true;
+    }
+    
+    return isNew;
+  },
+
   isContextualQuestion(prompt, previousPrompt) {
     if (!previousPrompt) return false;
     
@@ -127,29 +203,7 @@ module.exports = {
       'so nakasabot', 'so nasabtan',
       'aw', 'aw okay', 'ah okay',
       'so', 'sow', 'eh', 'e', 'a', 'ah', 'oh', 'ay',
-      'ha', 'heh', 'hmm', 'hm', 'mmm',
-      'wehh', 'we', 'weh',
-      'char', 'charot', 'gagi', 'lodi',
-      'bes', 'mars', 'mhie', 'sis', 'bro', 'pre', 'pare',
-      'tol', 'boss', 'sir', 'maam',
-      'k', 'ok', 'oki', 'okie', 'cge', 'sige', 'ge', 'ges',
-      'oo', 'opo', 'hnd', 'ndi', 'dili',
-      'tma', 'tm', 'ml', 'gts', 'gtz', 'ngts',
-      'sbi', 'ksi', 'kz', 'kya', 'tlga', 'tlag',
-      'nman', 'nmn', 'lng', 'pg', 'ng', 'sa', 'ko', 'mo',
-      'ano yan', 'ano yun', 'ano ito', 'ano iyan',
-      'bakit ganun', 'bakit ganyan', 'bakit ganito',
-      'paano yan', 'paano yun', 'paano ito',
-      'saan yan', 'saan yun', 'saan ito',
-      'sino yan', 'sino yun', 'sino ito',
-      'kanino', 'kaninong',
-      'ilan yan', 'ilan yun', 'ilan ito',
-      'magkano yan', 'magkano yun', 'magkano ito',
-      'sige', 'cge', 'ge', 'ges', 'okay', 'ok', 'oki',
-      'yes', 'yeah', 'yep', 'yup', 'uh huh',
-      'no', 'nope', 'nah', 'uh uh',
-      'thanks', 'thank you', 'salamat', 'tnx', 'ty',
-      'welcome', 'walang anuman', 'youre welcome'
+      'ha', 'heh', 'hmm', 'hm', 'mmm'
     ];
     
     const isRelated = contextualPatterns.some(pattern => 
@@ -221,7 +275,6 @@ module.exports = {
     }
   },
 
-  // ✅ UPDATED: OpenAI API Configuration
   getApiConfig() {
     return {
       url: 'https://api-library-kohi-production.up.railway.app/api/pollination-ai',
@@ -242,7 +295,6 @@ module.exports = {
     while (retries > 0) {
       try {
         const encodedPrompt = encodeURIComponent(prompt);
-        // ✅ Using OpenAI model
         const apiUrl = `${config.url}?prompt=${encodedPrompt}&model=openai&user=123`;
         const response = await axios.get(apiUrl, {
           timeout: config.timeout,
