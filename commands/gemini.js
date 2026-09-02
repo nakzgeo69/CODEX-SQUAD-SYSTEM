@@ -1,4 +1,4 @@
-// ========== gemini.js - COMPLETE FIXED ==========
+// ========== gemini.js - Complete Image Analysis ==========
 const axios = require('axios');
 const { sendMessage } = require('../handles/sendMessage');
 
@@ -8,7 +8,7 @@ module.exports = {
   name: ['gemini', 'vision', 'analyze', 'imganalyze', 'identify', 'plant', 'animal', 'insect', 'tree'],
   description: 'Analyze images, answer tests, identify plants/animals/insects',
   usage: 'gemini [description] (send/reply to image)',
-  version: '3.0.0',
+  version: '3.3.0',
   author: 'codex',
   category: 'AI',
   cooldown: 5,
@@ -18,12 +18,14 @@ module.exports = {
       let prompt = args.join(' ').trim();
       let imageUrl = null;
 
+      // Check for image in reply
       if (event?.message?.reply_to?.mid) {
         const replyData = await this.getRepliedMessageData(event.message.reply_to.mid, token);
         imageUrl = replyData.imageUrl;
-        if (!prompt) prompt = 'Identify what is in this image with complete scientific classification.';
+        if (!prompt) prompt = 'Analyze this image.';
       }
 
+      // Check for image attachment
       if (!imageUrl && event?.message?.attachments) {
         for (const attachment of event.message.attachments) {
           if (attachment.type === 'image' || attachment.type === 'photo') {
@@ -36,7 +38,7 @@ module.exports = {
             break;
           }
         }
-        if (imageUrl && !prompt) prompt = 'Identify what is in this image with complete scientific classification.';
+        if (imageUrl && !prompt) prompt = 'Analyze this image.';
       }
 
       if (!imageUrl) {
@@ -46,23 +48,10 @@ module.exports = {
         return;
       }
 
-      // ===== CHECK IMAGE QUALITY =====
-      const qualityCheck = await this.checkImageQuality(imageUrl);
-      if (qualityCheck.quality === 'low') {
-        await sendMessage(senderId, {
-          text: 'The image appears to be low quality. I will try to enhance it, but results may not be fully accurate.'
-        }, token);
-        const enhancedUrl = await this.enhanceImage(imageUrl);
-        if (enhancedUrl !== imageUrl) {
-          imageUrl = enhancedUrl;
-        }
-      }
-
-      // ===== DETECT LANGUAGE FROM USER PROMPT =====
+      // Detect language
       const detectedLanguage = this.detectLanguage(prompt);
-      console.log('[Gemini] Detected language:', detectedLanguage);
 
-      // ===== CHECK IF IDENTIFICATION REQUEST =====
+      // Check if identification request
       const isIdentify = prompt.toLowerCase().includes('identify') ||
                          prompt.toLowerCase().includes('ano ito') ||
                          prompt.toLowerCase().includes('what is this') ||
@@ -75,12 +64,11 @@ module.exports = {
                          prompt.toLowerCase().includes('insekto') ||
                          prompt.toLowerCase().includes('puno') ||
                          prompt.toLowerCase().includes('kilalanin') ||
-                         prompt.toLowerCase().includes('ilha') ||
-                         prompt.toLowerCase().includes('identify');
+                         prompt.toLowerCase().includes('ilha');
 
       console.log('[Gemini] Analyzing image...');
       let response;
-      
+
       if (isIdentify) {
         response = await this.callIdentifyAPI(prompt, imageUrl, detectedLanguage);
       } else {
@@ -97,32 +85,7 @@ module.exports = {
     }
   },
 
-  async checkImageQuality(imageUrl) {
-    try {
-      const response = await axios.head(imageUrl, { timeout: 10000 });
-      const contentLength = response.headers['content-length'];
-      if (contentLength && parseInt(contentLength) < 50000) {
-        return { quality: 'low', size: contentLength };
-      }
-      return { quality: 'high', size: contentLength };
-    } catch (error) {
-      return { quality: 'unknown', size: 0 };
-    }
-  },
-
-  async enhanceImage(imageUrl) {
-    try {
-      const enhanceUrl = `https://api.remini.ai/enhance?url=${encodeURIComponent(imageUrl)}`;
-      const response = await axios.get(enhanceUrl, { timeout: 15000 });
-      if (response.data && response.data.enhancedUrl) {
-        return response.data.enhancedUrl;
-      }
-      return imageUrl;
-    } catch (error) {
-      return imageUrl;
-    }
-  },
-
+  // ========== IDENTIFY API ==========
   async callIdentifyAPI(prompt, imageUrl, detectedLanguage = 'english') {
     try {
       const identifyPrompt = this.buildIdentifyPrompt(prompt, detectedLanguage);
@@ -143,92 +106,115 @@ module.exports = {
     const langName = this.getLanguageName(language);
     let prompt;
 
-    // ===== FORCEFUL IDENTIFICATION INSTRUCTIONS =====
-    const baseInstructions = `
-CRITICAL INSTRUCTIONS - YOU MUST FOLLOW EXACTLY:
+    if (language === 'tagalog' || language === 'filipino') {
+      prompt = `Ikaw ay isang biologist at botanist na eksperto.
 
-1. FIRST: Identify the SPECIFIC species in the image (e.g., Gmelina arborea, Mangifera indica, etc.)
-2. SECOND: Provide COMPLETE scientific classification
-3. THIRD: DO NOT just describe the image - IDENTIFY what it is
-4. FOURTH: Use the user's language: ${langName.toUpperCase()}
-5. FIFTH: DO NOT use "N/A" or "Unknown" - find the actual information
-6. SIXTH: If the image is a plant/tree, provide ALL categories below
-7. SEVENTH: If the image is an animal, provide ALL categories below
-8. EIGHTH: If the image is an insect, provide ALL categories below
-9. NINTH: DO NOT just say "this is a leaf" - identify the SPECIES
-10. TENTH: BE SPECIFIC - identify the exact species name
+MAHALAGA: Kilalanin ang TUMPAK na species sa larawan.
 
-COMPLETE FORMAT FOR PLANT/TREE IDENTIFICATION:
+FORMAT:
+Uri: 
+Karaniwang Pangalan: 
+Lokal na Pangalan: 
 
-GENERAL INFORMATION:
-Type: [Tree/Shrub/Herb/Vine]
-Common Name: [English common name]
-Local Name: [Local/Filipino name]
-Other Names: [Other common names]
+SCIENTIFIC CLASSIFICATION:
+Kaharian: 
+Dibisyon: 
+Hati: 
+Ayos: 
+Pamilya: 
+Sari: 
+Espesye: 
+
+KATANGIAN:
+Taas/Laki: 
+Kulay: 
+Natatanging Katangian: 
+
+TIRAHAN:
+Likas na Tirahan: 
+Distribusyon: 
+
+GAMIT:
+Pang-ekonomiya: 
+Ekolohikal: 
+Medisinal: 
+
+KARAGDAGANG IMPORMASYON:
+
+TANONG NG USER: ${userPrompt || 'Kilalanin ang nasa larawan'}`;
+    } else if (language === 'bisaya' || language === 'cebuano') {
+      prompt = `Ikaw usa ka biologist ug botanist nga eksperto.
+
+MAHINUNGDANON: Ilha ang TUKMA nga species sa litrato.
+
+FORMAT:
+Uri: 
+Kasagarang Ngalan: 
+Lokal nga Ngalan: 
+
+SCIENTIFIC CLASSIFICATION:
+Ginharian: 
+Dibisyon: 
+Klase: 
+Han-ay: 
+Pamilya: 
+Sari: 
+Espesye: 
+
+KATANGIAN:
+Kataas: 
+Kolor: 
+Espesyal nga Katingalahan: 
+
+PUY-ANAN:
+Puy-anan: 
+Apod-apod: 
+
+GAMIT:
+Pang-ekonomiya: 
+Ekolohikal: 
+Medisinal: 
+
+KARAGDAGANG IMPORMASYON:
+
+PANGUTANA SA USER: ${userPrompt || 'Ilha ang naa sa litrato'}`;
+    } else {
+      prompt = `You are a biologist and botanist expert.
+
+IMPORTANT: Identify the EXACT species in the image.
+
+FORMAT:
+Type: 
+Common Name: 
+Local Name: 
 
 SCIENTIFIC CLASSIFICATION:
 Kingdom: 
-Phylum/Division: 
+Phylum: 
 Class: 
 Order: 
 Family: 
 Genus: 
 Species: 
 
-PHYSICAL CHARACTERISTICS:
+CHARACTERISTICS:
 Height/Size: 
-Bark/Trunk: 
-Leaves: 
-Flowers: 
-Fruits/Seeds: 
+Color: 
+Distinctive Features: 
 
-HABITAT AND DISTRIBUTION:
+HABITAT:
 Natural Habitat: 
-Distribution in the Philippines: 
+Distribution: 
 
-USES AND IMPORTANCE:
-Economic Uses: 
-Ecological Importance: 
-Medicinal Uses: 
-
-DAO GROUP CLASSIFICATION (DENR):
-DAO Group: [1-Commercial/2-Non-Commercial/3-Endangered/4-Plantation/5-Invasive]
-Permit Required: [Yes/No]
-
-CONSERVATION STATUS:
-IUCN Status: 
+USES:
+Economic: 
+Ecological: 
+Medicinal: 
 
 ADDITIONAL INFORMATION:
-Quick Facts: 
-
-NOW IDENTIFY THE SPECIES IN THE IMAGE.`;
-
-    if (language === 'tagalog' || language === 'filipino') {
-      prompt = `Ikaw ay isang biologist at botanist na eksperto.
-
-MAHALAGA: Kilalanin ang TUMPAK na species sa larawan. HALIMBAWA: Gmelina arborea, Mangifera indica, atbp.
-
-${baseInstructions}
-
-TANONG NG USER: ${userPrompt || 'Kilalanin ang nasa larawan'}`;
-    } else if (language === 'bisaya' || language === 'cebuano') {
-      prompt = `Ikaw usa ka biologist ug botanist nga eksperto.
-
-MAHINUNGDANON: Ilha ang TUKMA nga species sa litrato. PANANGLITAN: Gmelina arborea, Mangifera indica, ug uban pa.
-
-${baseInstructions}
-
-PANGUTANA SA USER: ${userPrompt || 'Ilha ang naa sa litrato'}`;
-    } else {
-      prompt = `You are a biologist and botanist expert.
-
-IMPORTANT: Identify the EXACT species in the image. EXAMPLE: Gmelina arborea, Mangifera indica, etc.
-
-${baseInstructions}
 
 USER QUESTION: ${userPrompt || 'Identify what is in the image'}`;
     }
-
     return prompt;
   },
 
@@ -236,7 +222,6 @@ USER QUESTION: ${userPrompt || 'Identify what is in the image'}`;
   processIdentifyResponse(response, language = 'english') {
     let processed = response || '';
     
-    // Remove AI introductions
     processed = processed
       .replace(/^I'?m?\s+a?\s*Gemini.*?model.*?\n\n?/i, '')
       .replace(/^Here is my analysis.*?\n/i, '')
@@ -252,71 +237,14 @@ USER QUESTION: ${userPrompt || 'Identify what is in the image'}`;
       .replace(/^Ang larawan ay.*?\n/i, '')
       .replace(/^The image is.*?\n/i, '')
       .replace(/^Ang imahe ay.*?\n/i, '')
-      .replace(/^The image appears.*?\n/i, '')
-      .replace(/^This image depicts.*?\n/i, '')
-      .replace(/^This image contains.*?\n/i, '')
-      .replace(/^The image contains.*?\n/i, '')
+      .replace(/^={2,}/gm, '')
+      .replace(/^-{2,}/gm, '')
+      .replace(/^\*{2,}/gm, '')
       .trim();
 
-    // Check if response is just a description (not identification)
-    const isJustDescription = processed.length < 100 || 
-                             (!processed.includes('Kingdom') && 
-                              !processed.includes('Kaharian') && 
-                              !processed.includes('Ginharian') &&
-                              !processed.includes('Species') &&
-                              !processed.includes('Espesye'));
-
-    if (isJustDescription) {
-      const langName = this.getLanguageName(language);
-      let correction = '\n\nSPECIES IDENTIFICATION:\n';
-      if (language === 'tagalog' || language === 'filipino') {
-        correction += 'Batay sa katangian ng dahon (hugis-puso, malaki, matingkad na berde, may reticulate veins), ito ay posibleng Gmelina arborea (Gmelina).\n\n';
-      } else if (language === 'bisaya' || language === 'cebuano') {
-        correction += 'Base sa mga kinaiya sa dahon (pormag-kasingkasing, dako, hayag nga berde, naay reticulate veins), kini posible nga Gmelina arborea (Gmelina).\n\n';
-      } else {
-        correction += 'Based on the leaf characteristics (heart-shaped, large, bright green, reticulate veins), this is likely Gmelina arborea (Gmelina).\n\n';
-      }
-      
-      correction += `GENERAL INFORMATION:
-Type: Tree
-Common Name: Gmelina
-Local Name: Gmelina, Gemelina
-
-SCIENTIFIC CLASSIFICATION:
-Kingdom: Plantae
-Phylum/Division: Magnoliophyta
-Class: Magnoliopsida
-Order: Lamiales
-Family: Lamiaceae
-Genus: Gmelina
-Species: Gmelina arborea
-
-PHYSICAL CHARACTERISTICS:
-Height/Size: 15-25 meters
-Bark/Trunk: Smooth, greyish-white bark
-Leaves: Heart-shaped, 10-20 cm, opposite arrangement
-Flowers: Yellow to brown, panicle inflorescence
-Fruits/Seeds: Drupe, yellow when ripe
-
-HABITAT AND DISTRIBUTION:
-Natural Habitat: Tropical forests, lowland areas
-Distribution in the Philippines: Widely planted in Mindanao, Luzon, Visayas
-
-USES AND IMPORTANCE:
-Economic Uses: Timber for furniture, construction, pulp and paper
-Ecological Importance: Reforestation, erosion control
-Medicinal Uses: Bark for stomachaches
-
-DAO GROUP CLASSIFICATION (DENR):
-DAO Group: 4 - Plantation Species
-Permit Required: Yes
-
-CONSERVATION STATUS:
-IUCN Status: Least Concern
-
-ADDITIONAL INFORMATION:
-Quick Facts: Fast-growing tree, commonly used for reforestation in the Philippines`;
-      processed = correction;
+    if (processed.length < 100 || !processed.includes('Kingdom') && !processed.includes('Kaharian') && !processed.includes('Ginharian')) {
+      let fallback = '\n\nCannot identify the species. Please provide a clearer image.';
+      processed += fallback;
     }
 
     return processed;
@@ -346,117 +274,66 @@ Quick Facts: Fast-growing tree, commonly used for reforestation in the Philippin
     if (language === 'tagalog' || language === 'filipino') {
       prompt = `Ikaw ay isang AI assistant na nagsusuri ng isang imahe.
 
-UNAHIN MONG TUKUYIN KUNG ANONG KLASE NG IMAGE ITO, pagkatapos ay tumugon nang ANGKOP.
+Tukuyin kung anong klase ng imahe ito at tumugon nang naaayon.
 
-MAHALAGANG PANUNTUNAN:
-- DIREKTA sa mga sagot, WALANG intro
-- SUNDIN ANG INSTRUCTIONS NG BAWAT PART
-- HUWAG iwanang blank ang mga sagot
+PANUNTUNAN:
+- Direktang sagot, walang intro
+- Sundin ang instructions ng bawat part
+- Huwag iwanang blank ang mga sagot
 - Gamitin ang "YES" at "NO" sa halip na ✓ o ✗
-- Ibigay ang tamang ORDER kung sequencing
-- HUWAG gumamit ng ==== o ---- o ***
-- WALANG translation
-- Tumugon sa ${langName.toUpperCase()} LAMANG
+- Huwag gumamit ng ==== o ---- o ***
+- Tumugon sa ${langName.toUpperCase()}
 
-MGA URI NG TEST AT PAANO SUMAGOT:
+MGA URI NG TEST:
+1. Multiple Choice: Ibigay ang LETTER at buong sagot
+2. Sequencing: Ibigay ang tamang ORDER (1, 2, 3, 4)
+3. True/False: Gamitin ang YES para sa Tama, NO para sa Mali
+4. Enumeration: Ibigay ang kumpletong listahan
+5. Essay: 1-2 pangungusap lamang
 
-1. MULTIPLE CHOICE:
-- Ibigay ang LETTER ng tamang sagot (A, B, C, D)
-- Isulat ang buong sagot pagkatapos ng letter
-
-2. SEQUENCING (Arrange in order):
-- Ibigay ang tamang ORDER ng steps
-- Isulat ang number (1, 2, 3, 4, etc.) sa tamang sequence
-
-3. CHECK OR X / TRUE OR FALSE:
-- Gamitin ang "YES" para sa PROPER / TAMA
-- Gamitin ang "NO" para sa IMPROPER / MALI
-- Bawat item dapat may sagot
-
-4. ENUMERATION:
-- Ibigay ang KUMPLETONG listahan
-- Sundin ang hinihinging bilang ng items
-
-5. ESSAY (1-2 sentences):
-- Ibigay ang sagot sa 1-2 pangungusap LAMANG
-
-TANONG NG USER: ${userPrompt || 'Suriin at sagutin ang imahe'}`;
+TANONG NG USER: ${userPrompt || 'Suriin ang imahe'}`;
     } else if (language === 'bisaya' || language === 'cebuano') {
       prompt = `Ikaw usa ka AI assistant nga nagsusi sa usa ka litrato.
 
-UNAHON PAG-ILA KUNG UNSA NGA KLASE SA LITRATO KINI, pagkahuman tubag nga ANGKOP.
+Ilha kung unsa nga klase sa litrato kini ug tubag nga angkop.
 
-MAHINUNGDANON NGA MGA LAGDA:
-- DIREKTA sa mga tubag, WALAY intro
-- SUNDI ANG INSTRUCTIONS SA BAHIN
-- AYAW BIYAI UG BLANKO ang mga tubag
+LAGDA:
+- Direkta nga tubag, walay intro
+- Sunda ang instructions sa bahin
+- Ayaw biyai ug blanko ang mga tubag
 - Gamitin ang "YES" ug "NO" imbes nga ✓ o ✗
-- Ihatag ang husto nga ORDER kung sequencing
-- AYAW gamita ang ==== o ---- o ***
-- WALAY translation
-- Tubag sa ${langName.toUpperCase()} LAMANG
+- Ayaw gamita ang ==== o ---- o ***
+- Tubag sa ${langName.toUpperCase()}
 
-MGA URI SA TEST UG UNSAON PAGTUBAG:
+MGA URI SA TEST:
+1. Multiple Choice: Ihatag ang LETTER ug tibuok nga tubag
+2. Sequencing: Ihatag ang husto nga ORDER (1, 2, 3, 4)
+3. True/False: Gamitin ang YES para sa Tama, NO para sa Mali
+4. Enumeration: Ihatag ang kompleto nga listahan
+5. Essay: 1-2 ka sentence lamang
 
-1. MULTIPLE CHOICE:
-- Ihatag ang LETTER sa husto nga tubag (A, B, C, D)
-- Isulat ang tibuok nga tubag pagkahuman sa letter
-
-2. SEQUENCING (Arrange in order):
-- Ihatag ang husto nga ORDER sa steps
-- Isulat ang number (1, 2, 3, 4, etc.) sa husto nga sequence
-
-3. CHECK OR X / TRUE OR FALSE:
-- Gamitin ang "YES" para sa PROPER / TAMA
-- Gamitin ang "NO" para sa IMPROPER / MALI
-- Ang matag item kinahanglan adunay tubag
-
-4. ENUMERATION:
-- Ihatag ang KOMPLETO nga listahan
-- Sundi ang gikinahanglan nga gidaghanon sa items
-
-5. ESSAY (1-2 sentences):
-- Ihatag ang tubag sa 1-2 ka sentence LAMANG
-
-PANGUTANA SA USER: ${userPrompt || 'Susiha ug tubaga ang litrato'}`;
+PANGUTANA SA USER: ${userPrompt || 'Susiha ang litrato'}`;
     } else {
       prompt = `You are an AI assistant analyzing an image.
 
-FIRST IDENTIFY WHAT TYPE OF IMAGE THIS IS, then respond APPROPRIATELY.
+Identify what type of image this is and respond appropriately.
 
-IMPORTANT RULES:
-- DIRECTLY provide answers, NO intro
-- FOLLOW THE INSTRUCTIONS of each part
-- DO NOT leave answers blank
+RULES:
+- Direct answers, no intro
+- Follow instructions of each part
+- Do not leave answers blank
 - Use "YES" and "NO" instead of ✓ or ✗
-- Provide correct ORDER if sequencing
-- DO NOT use ==== or ---- or ***
-- NO translations
-- Respond in ${langName.toUpperCase()} ONLY
+- Do not use ==== or ---- or ***
+- Respond in ${langName.toUpperCase()}
 
-TEST TYPES AND HOW TO ANSWER:
+TEST TYPES:
+1. Multiple Choice: Provide LETTER and complete answer
+2. Sequencing: Provide correct ORDER (1, 2, 3, 4)
+3. True/False: Use YES for True, NO for False
+4. Enumeration: Provide complete list
+5. Essay: 1-2 sentences only
 
-1. MULTIPLE CHOICE:
-- Provide the LETTER of correct answer (A, B, C, D)
-- Write the complete answer after the letter
-
-2. SEQUENCING (Arrange in order):
-- Provide the correct ORDER of steps
-- Write the number (1, 2, 3, 4, etc.) in correct sequence
-
-3. CHECK OR X / TRUE OR FALSE:
-- Use "YES" for PROPER / TRUE
-- Use "NO" for IMPROPER / FALSE
-- Each item MUST have an answer
-
-4. ENUMERATION:
-- Provide COMPLETE list
-- Follow the required number of items
-
-5. ESSAY (1-2 sentences):
-- Provide answer in 1-2 sentences ONLY
-
-USER QUESTION: ${userPrompt || 'Analyze and answer this image'}`;
+USER QUESTION: ${userPrompt || 'Analyze this image'}`;
     }
     return prompt;
   },
@@ -507,18 +384,6 @@ USER QUESTION: ${userPrompt || 'Analyze and answer this image'}`;
       .replace(/^---+\n/g, '')
       .replace(/\n{3,}/g, '\n\n')
       .trim();
-    
-    processed = processed.replace(/\s*\([^)]*[A-Za-z]{20,}[^)]*\)/g, '');
-    
-    processed = processed
-      .replace(/^\s*[\*\-•]\s*Landscape:.*?\n/gim, '')
-      .replace(/^\s*[\*\-•]\s*Lake:.*?\n/gim, '')
-      .replace(/^\s*[\*\-•]\s*Foreground:.*?\n/gim, '')
-      .replace(/^\s*[\*\-•]\s*Activities.*?\n/gim, '')
-      .replace(/^\s*[\*\-•]\s*People:.*?\n/gim, '')
-      .replace(/^\s*[\*\-•]\s*Overall Mood:.*?\n/gim, '')
-      .replace(/^\s*[\*\-•]\s*Canoeing:.*?\n/gim, '')
-      .replace(/^\s*[\*\-•]\s*Barbecue.*?\n/gim, '');
     
     return this.cleanResponse(processed);
   },
