@@ -2,7 +2,7 @@ const axios = require('axios');
 const { sendMessage } = require('../handles/sendMessage');
 
 module.exports = {
-  name: ['gemini'],
+  name: ['extract'],
   description: 'Analyze images and respond in the SAME language as the image',
   usage: 'Send an image and the bot will analyze it',
   version: '27.0.0',
